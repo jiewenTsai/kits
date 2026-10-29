@@ -70,16 +70,22 @@ kits_itemfit <- function(data, item, type = c("conditional", "wle"), ...) {
 # 題目適配的表（內部用，給 kits_itemfit() 和 kits_item() 的 item$itemfit）：一列一題的彙總，沒有個人的值。
 # resp：長格式的作答；call：記在 info 的呼叫；data：resp 的指紋（kits_item() 已經算過，不用再算一次）；
 # type：conditional（給定題本內的原始分）或 wle（每個人在他的 WLE）
-itemfit_table <- function(resp, item, call, data = data_fingerprint(resp), type = "conditional") {
+# sets：person_sets(resp)，kits_item() 算過時直接傳進來（同樣的資料只算一次）
+itemfit_table <- function(resp, item, call, data = data_fingerprint(resp), type = "conditional",
+                          sets = person_sets(resp)) {
   parms <- param_frame(item)
   need_items(resp, parms)
   abort_if(length(unique(resp$item_id)) < 2, "Item fit needs at least 2 items.")
-  moments <- if (type == "conditional") cond_moments(resp, parms) else wle_moments(resp, parms)
+  moments <- if (type == "conditional") {
+    cond_moments(resp, parms, sets)
+  } else {
+    wle_moments(resp, parms)
+  }
   inner <- unique(moments$visit_id)
   abort_if(length(inner) == 0,
            "Every person has a zero or a perfect score, so the fit cannot be computed.", class = "kits_error_fit")
   fit <- mean_squares(moments, item_id)
-  tia <- item_totals(resp) |>
+  tia <- item_totals(resp, sets) |>
     summarise(pvalue = booklet_mean(pvalue, n_persons), rir = booklet_mean(rir, n_persons), .by = item_id)
   out <- data.frame(item_id = sort(unique(resp$item_id))) |>
     left_join(fit, by = "item_id") |>
@@ -121,9 +127,9 @@ wle_moments <- function(resp, parms) {
 #   P(X_i = x | r, b) = e_ix gamma^(-i)_{b, r - x} / gamma_{b, r}，e_ix = exp(-sum_{g <= x} beta_ig)
 # gamma 是題本的基本對稱函數（CML 的多項式，algo_esf()），gamma^(-i) 是拿掉第 i 題的。不需要 theta。
 # 給定 r 時這題只可能有一個分數（0 分、滿分、只有一題的題本）：條件變異數是 0，這些作答不算（和 iarm 相同）
-cond_moments <- function(resp, parms) {
+# sets：每個人次的題目組合和原始分（person_sets(resp)；kits_item() 只算一次，傳進來）
+cond_moments <- function(resp, parms, sets = person_sets(resp)) {
   beta_of <- betas_by_item(parms)
-  sets <- person_sets(resp, parms)
   tables <- map(unique(sets$set), \(key) cond_table(key, beta_of)) |>
     list_rbind()
   resp |>
@@ -160,10 +166,10 @@ itemfit_flag <- function(infit, outfit, range = itemfit_range()) {
 
 # 每個題本每一題：人數、通過率（平均分 / 這題觀察到的最高分）、和題本其他題總分的相關（內部用，給 kits_itemfit()）。
 # 和 dexter::tia_tables()$items 的 n_persons、pvalue、rir 相同。題本和題照名字排。
-item_totals <- function(resp) {
+item_totals <- function(resp, sets = person_sets(resp)) {
   resp |>
     mutate(max_score = max(item_score), .by = item_id) |>
-    left_join(rename(person_sets(resp), book = set, total = raw), by = "visit_id") |>
+    left_join(rename(sets, book = set, total = raw), by = "visit_id") |>
     summarise(n_persons = n(), pvalue = mean(item_score) / max_score[1], rir = rest_cor(item_score, total - item_score),
               .by = c(book, item_id)) |>
     arrange(sort_rank(book), sort_rank(item_id))

@@ -1,6 +1,7 @@
 Package: kits
 Title: Psychometric Tools for the Kids in Taiwan Developmental Scale
-Version: 0.25.1
+Version: 0.25.2
+Date: 2026-10-30
 Authors@R: person("Jie-Wen", "Tsai", email = "tsai.jiewen@gmail.com", role = c("aut", "cre"))
 Description: Tools for the developmental scale of KIT (Kids in Taiwan: National
     Longitudinal Study of Child Development and Care). Each model is written

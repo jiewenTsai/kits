@@ -200,13 +200,15 @@ item_observed_plot <- function(x, items, data, group, step, persons, scores) {
 observed_data <- function(x, data, group, persons, scores) {
   resp <- resp_long(data, gaps = FALSE)
   if (is.null(scores)) {
-    scores <- kits_subj(data, x)
+    scores <- subj_theta(resp, param_frame(x))   # 只要 theta：kits_subj() 的 WLE，不算個人適配
+  } else {
+    abort_if(!is.data.frame(scores) || !all(c("visit_id", "theta") %in% names(scores)),
+             "`scores` must be a data.frame with `visit_id` and `theta`, ",
+             "e.g. kits_subj(data, item).")
+    need_same_scale(beta_scale_of(x), scale_of(scores),
+                    sprintf("The scores are on scale %s, the betas on %s; ", scale_of(scores),
+                            beta_scale_of(x)), "use kits_subj(data, item).")
   }
-  abort_if(!is.data.frame(scores) || !all(c("visit_id", "theta") %in% names(scores)),
-           "`scores` must be a data.frame with `visit_id` and `theta`, e.g. kits_subj(data, item).")
-  need_same_scale(beta_scale_of(x), scale_of(scores),
-                  sprintf("The scores are on scale %s, the betas on %s; ", scale_of(scores),
-                          beta_scale_of(x)), "use kits_subj(data, item).")
   sp <- if (is.null(group)) {
     all <- LAB$all_children
     list(group = rep(all, nrow(resp)), levels = all, label = "all children")

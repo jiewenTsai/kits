@@ -1,3 +1,22 @@
+# kits 0.25.2
+
+Faster: speed fixes only. Every result is identical to 0.25.1 (checked with `identical()` on the
+objects and on the plotly JSON of the plots, on the demo data and on a simulated set of 1 million
+responses). Times below are for that set.
+
+* Faster: `plot()` of a `kits_resp` (the design plot) formats each wave label once instead of once
+  per row (11 s to under 0.5 s).
+* Faster: the PCM kernel no longer loops over the rows. Its cumulative sums are column-wise
+  `rowSums()`, which add in the same order and precision as the row-wise `cumsum()` before, so the
+  numbers do not change by a single bit. This speeds up `kits_subj()` (10.6 s to 7.5 s),
+  `kits_itemfit(type = "wle")`, `kits_sim()`, `kits_pcm_prob()` and the observed plot.
+* Faster: `plot(item, type = "observed")` without `scores` computes only the person scores it
+  draws, not the person fit of a full `kits_subj()` (14 s to 9 s, with the kernel above).
+* Faster: the check for a person with the same item twice (in `kits_resp()` and every function
+  that reads long responses) uses `vctrs::vec_duplicate_any()` (0.7 s to 0.02 s).
+* Faster: `kits_item()` finds the item pattern and raw score of each person once and shares them
+  between the booklets and the item fit, instead of three times.
+
 # kits 0.25.1
 
 * `kits_item_table(thr, norms = NULL, data = )`: the norm is optional. The observed pass ages need

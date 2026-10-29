@@ -68,7 +68,8 @@ resp_table_long <- function(data) {
   d$domain <- NULL
   d$visit_id <- as.character(d$visit_id)
   d$item_id <- as.character(d$item_id)
-  abort_if(anyDuplicated(d[c("visit_id", "item_id")]), "`data` has a person with the same item more than once. ",
+  abort_if(vctrs::vec_duplicate_any(d[c("visit_id", "item_id")]),
+           "`data` has a person with the same item more than once. ",
            "Each person-wave needs its own visit_id, e.g. paste(child_id, wave_m).", class = "kits_error_data")
   people <- distinct(d[setdiff(names(d), c("item_id", "item_score"))])
   abort_if(anyDuplicated(people$visit_id), "Column(s) ", paste(varying_columns(people), collapse = ", "),

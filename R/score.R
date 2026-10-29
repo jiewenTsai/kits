@@ -168,8 +168,13 @@ other_items_row <- function(other, standard, w) {
 # 波次，由小到大；一組（NA）時只有 NA
 wave_values <- function(w) sort(unique(w), na.last = TRUE)
 
-# 波次的標籤：一組（NA）時是 "all"
-wave_label <- function(w) map_chr(unname(w), \(v) if (is.na(v)) "all" else format(v))
+# 波次的標籤：一組（NA）時是 "all"。每個不同的值只 format() 一次，再照 match() 放回每一列
+wave_label <- function(w) {
+  w <- unname(w)
+  u <- unique(w)
+  lab <- map_chr(u, \(v) if (is.na(v)) "all" else format(v))
+  lab[match(w, u)]
+}
 
 
 #' @rdname kits_subj_table

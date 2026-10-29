@@ -93,6 +93,15 @@ add_wle <- function(est, parms) {
   left_join(est, combos, by = c("set", "raw"))
 }
 
+# 只有每個人次的 theta（visit_id、theta）：kits_subj() 的前兩步（同樣的 WLE），不算個人適配、
+# 不接人的資料、不做診斷。給 plot(item, type = "observed")（沒有給 scores 時）
+subj_theta <- function(resp, parms) {
+  need_items(resp, parms)
+  person_sets(resp, parms) |>
+    add_wle(parms) |>
+    select(visit_id, theta)
+}
+
 # 題本的名字和 dexter 相同（number_booklets()）
 add_booklet_ids <- function(est) {
   books <- select(number_booklets(est), set, pattern_id)

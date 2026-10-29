@@ -169,7 +169,7 @@ long_resp <- function(x, arg) {
   empty <- function(v) any(is.na(v) | v == "")
   abort_if(empty(resp$visit_id) || empty(resp$item_id),
            sprintf("`%s` has empty visit_id or item_id.", arg), class = "kits_error_data")
-  abort_if(anyDuplicated(resp[c("visit_id", "item_id")]),
+  abort_if(vctrs::vec_duplicate_any(resp[c("visit_id", "item_id")]),
            sprintf("`%s` has a person with the same item more than once. ", arg),
            "Each person-wave needs its own visit_id, e.g. paste(child_id, wave_m).", class = "kits_error_data")
   drop_message(setdiff(all_items, resp$item_id), setdiff(all_persons, resp$visit_id))

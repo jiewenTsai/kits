@@ -2,8 +2,9 @@
 #
 # eta_k = sum_{g <= k} (theta - beta_g)，k = 0..m（Masters, 1982 的寫法；eta_0 = 0）；
 # 每列先減掉最大值再取 exp（數值穩定），S = 列和，P = exp(eta) / S，log S = max + log(列和)。
-# eta 每列用 cumsum(theta - beta)：和 0.23.0 以前的門檻（step_threshold()）、kits_sim() 的算法
-# 一個位元都不差，所以校準、連結、常模的數字不動。
+# eta 每列是 cumsum(theta - beta) 的值（0.25.2 起用 rowSums() 逐欄算，見 pcm_kernel()）：
+# 和 0.23.0 以前的門檻（step_threshold()）、kits_sim() 的算法一個位元都不差，
+# 所以校準、連結、常模的數字不動。
 #
 # 用到它的地方：
 #   pcm_kernel()       ：p_at_least()（calibrate.R：門檻和它的 SE）、kits_sim() 的抽樣（simulate.R）
@@ -23,9 +24,12 @@ pcm_kernel <- function(theta, beta_i) {
   }
   n <- length(theta)
   m <- length(beta_i)
-  steps <- matrix(apply(outer(theta, beta_i, "-"), 1, cumsum), nrow = n, ncol = m, byrow = TRUE)
-  eta <- cbind(0, steps)                    # eta_k = sum_{g <= k} (theta - beta_g)
-  top <- if (n > 0) apply(eta, 1, max) else numeric(0)
+  d <- outer(theta, beta_i, "-")
+  # eta_k = sum_{g <= k} (theta - beta_g)：第 k 欄是前 k 欄的 rowSums()。rowSums() 和 cumsum() 一樣
+  # 從 0 起、照順序用 long double 累加，所以和每列 cumsum() 一個位元都不差，但不用逐列 apply()
+  steps <- vapply(seq_len(m), \(k) rowSums(d[, seq_len(k), drop = FALSE]), numeric(n))
+  eta <- cbind(0, matrix(steps, nrow = n, ncol = m))
+  top <- do.call(pmax, map(seq_len(m + 1), \(k) eta[, k]))   # 每列的最大值（逐欄比）
   ex <- exp(eta - top)
   S <- rowSums(ex)
   list(ex = ex, S = S, log_S = top + log(S))

@@ -126,7 +126,8 @@ calibration_stats <- function(resp, fixed, info = NULL) {
 item_result <- function(resp, stats, fit, thr, scale, info) {
   bad <- if (is.null(stats$left_out)) character() else unique(stats$left_out$item_id)
   calib <- filter(resp, !item_id %in% bad)
-  books <- calibration_booklets(resp)
+  sets <- person_sets(resp)   # 每個人次的題目組合和原始分：題本和題目適配共用，只算一次
+  books <- calibration_booklets(sets)
   thr <- kits_table(thr)
   attr(thr, "scale") <- scale
   attr(thr, "source") <- info$data
@@ -134,7 +135,7 @@ item_result <- function(resp, stats, fit, thr, scale, info) {
                          design = booklet_design(books), scale = scale, itemfit = NULL, diagnostics = NULL,
                          info = info),
                     class = "kits_item")
-  itemfit <- item_itemfit(resp, item)
+  itemfit <- item_itemfit(resp, item, sets)
   item["itemfit"] <- list(itemfit$table)   # NULL 時也留著這個元素
   item$diagnostics <- item_diagnostics(fit, calib, bad, stats$n_persons, books$n, itemfit_row(itemfit))
   item
@@ -143,8 +144,8 @@ item_result <- function(resp, stats, fit, thr, scale, info) {
 # 題目適配（item$itemfit）：和 kits_itemfit(data, item) 同一個表（同樣的程式），只有 info 的呼叫是這次校準的。
 # 只有一題一列的彙總，沒有個人的值，所以 item 還是可以分享。
 # 算不出來時（例如少於 2 題）table 是 NULL，reason 說原因；不會讓校準停下來
-item_itemfit <- function(resp, item) {
-  tryCatch(list(table = itemfit_table(resp, item, item$info$call, item$info$data)),
+item_itemfit <- function(resp, item, sets = person_sets(resp)) {
+  tryCatch(list(table = itemfit_table(resp, item, item$info$call, item$info$data, sets = sets)),
            error = function(e) list(table = NULL, reason = conditionMessage(e)))
 }
 
@@ -262,8 +263,8 @@ fixed_text <- function(fixed) {
 # set（題號的鍵）、n（人次）、first_person（第一個人）、pattern_id。
 # 編號和 kits_subj() 相同（bk1, bk2, ...，booklet_names()）：人次照 visit_id 排序（C locale，arrange() 的預設），
 # 作答組合照出現的順序編號。所以同樣的資料，kits_subj() 和 kits_subj_table(item) 的 pattern_id 相同。
-calibration_booklets <- function(resp) {
-  number_booklets(person_sets(resp))
+calibration_booklets <- function(sets) {   # sets：person_sets(resp)
+  number_booklets(sets)
 }
 
 # 題本的設計表：pattern_id、item_id，一列一題。
