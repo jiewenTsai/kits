@@ -7,7 +7,7 @@
 \usage{
 kits_item_table(
   thr,
-  norms,
+  norms = NULL,
   data = NULL,
   dif = NULL,
   stems = NULL,
@@ -31,8 +31,9 @@ kits_item_table(
 \code{\link[=kits_convert]{kits_convert()}}, or its thresholds table (\code{coef()}, \code{item_id}, \code{item_score}, \code{thr}, optionally
 \code{domain} and \code{column}), or a list of them (stacked in order).}
 
-\item{norms}{The norm: a \code{\link[=kits_norms]{kits_norms()}} result for one domain, or by domain (\code{by = "domain"});
-P10, P50 and P90 are used.}
+\item{norms}{Optional: the norm, a \code{\link[=kits_norms]{kits_norms()}} result for one domain, or by domain
+(\code{by = "domain"}); P10, P50 and P90 are used. Without it the table has \code{D} and, with \code{data},
+the observed pass ages, but no place on the growth chart (\code{age_reach}, ...) and no \code{plot()}.}
 
 \item{data}{Optional responses with ages: a \code{\link[=kits_resp]{kits_resp()}}, or what it takes (a long data.frame,
 or a wide data.frame of item scores), with \code{age_m} and \code{wave_m}. For each item, a logistic
@@ -86,7 +87,8 @@ Its columns:
 \item \code{DIF}: \code{"none"}, \code{"favors girls"}, \code{"favors boys"} or \code{"inconsistent"}, from \code{dif}.
 \item \code{stem}: the item stem (any language), from \code{stems}; the item id when not given.
 \item \code{age_reach}, \code{below_range}, \code{above_range}, \code{empirical}, \code{x}: the place on the growth chart
-(the empirical age when there is one, else the age at which the norm median reaches \code{D}).
+(the empirical age when there is one, else the age at which the norm median reaches \code{D});
+only with \code{norms}.
 }
 }
 \description{
@@ -120,6 +122,9 @@ item_tab
 thr4 <- rbind(thr, data.frame(item_id = "a5", item_score = 1:4, thr = c(30, 45, 58, 70),
                               domain = "lan"))
 kits_item_table(thr4, norm, step = c(a5 = 3))
+
+# No norm: D and the observed pass ages from the responses only
+kits_item_table(thr, data = resp)
 p <- plot(item_tab)
 p <- plot(item_tab, type = "ladder", ages = c(6, 12, 18))
 if (interactive()) p

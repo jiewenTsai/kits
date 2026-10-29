@@ -275,3 +275,21 @@ test_that("fixed_params：新的最高分的固定題沒有 0 分也校準；新
   item_c <- kits_item(covered, fixed_params = coef(item))
   expect_identical(coef(item_c)$item_score[coef(item_c)$item_id == "a3"], 1:2)
 })
+
+test_that("kits_item_table()：不給常模時只有 D 和通過月齡，畫圖時說明要常模", {
+  set.seed(1)
+  age <- runif(800, 3, 24)
+  D <- 20 + 15 * log(age) + rnorm(800, 0, 3)
+  thr <- data.frame(item_id = c("a1", "a2"), item_score = 1, thr = c(40, 55), domain = "lan")
+  pass <- sapply(c(40, 55), \(b) rbinom(800, 1, plogis((D - b) / 3)))
+  colnames(pass) <- thr$item_id
+  resp <- data.frame(visit_id = 1:800, age_m = age, wave_m = round(age), pass)
+  tab <- kits_item_table(thr, data = resp)
+  expect_equal(tab$D, c(40, 55))
+  expect_true(all(is.finite(tab$age50)))
+  expect_false("age_reach" %in% names(tab))
+  norm <- kits_norms(D, age, ages = 3:24, degrees = c(3, 2, 1, 1),
+                     by = data.frame(domain = rep("lan", 800)))
+  expect_equal(kits_item_table(thr, norm, data = resp)$age50, tab$age50)   # 通過月齡和常模無關
+  expect_error(plot(tab), "norm")
+})

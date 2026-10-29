@@ -1,3 +1,10 @@
+# kits 0.25.1
+
+* `kits_item_table(thr, norms = NULL, data = )`: the norm is optional. The observed pass ages need
+  only the responses (`data`); the norm adds the age at which the norm median reaches each item
+  (`age_reach`, ...) and the growth chart and ladder of `plot()`. Without it the table has `D` and
+  the pass ages, and `plot()` says a norm is needed.
+
 # kits 0.25.0
 
 ## The algorithm layer: `algo_`

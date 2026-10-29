@@ -25,14 +25,14 @@ remotes::install_github("jiewenTsai/kits")
 或用下載的原始碼套件：
 
 ```r
-install.packages("kits_0.25.0.tar.gz", repos = NULL, type = "source")
+install.packages("kits_0.25.1.tar.gz", repos = NULL, type = "source")
 ```
 
 不能寫系統的 library 時（例如學校的電腦），裝到自己的資料夾：
 
 ```r
 dir.create("~/R/mylib", recursive = TRUE)
-install.packages("kits_0.25.0.tar.gz", repos = NULL, type = "source", lib = "~/R/mylib")
+install.packages("kits_0.25.1.tar.gz", repos = NULL, type = "source", lib = "~/R/mylib")
 .libPaths(c("~/R/mylib", .libPaths()))
 library(kits)
 ```

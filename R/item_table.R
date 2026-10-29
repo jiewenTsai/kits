@@ -1,5 +1,6 @@
 # 題目表（kits_item_table）：一題一列，D、通過月齡、常模中位數到達的月齡、DIF、題幹；表裡帶著常模，
 # 所以 plot() 直接畫成長曲線（type = "growth"）和成長階梯（type = "ladder"）。
+# 常模可以不給：通過月齡只要作答（data）就算得出來，常模只用在「常模中位數到達的月齡」和圖。
 
 #' Item table: each item with its D, ages, DIF and stem, for the report plots
 #'
@@ -13,8 +14,9 @@
 #' @param thr The thresholds, on the scale of the norm: a [kits_item()] converted with
 #'   [kits_convert()], or its thresholds table (`coef()`, `item_id`, `item_score`, `thr`, optionally
 #'   `domain` and `column`), or a list of them (stacked in order).
-#' @param norms The norm: a [kits_norms()] result for one domain, or by domain (`by = "domain"`);
-#'   P10, P50 and P90 are used.
+#' @param norms Optional: the norm, a [kits_norms()] result for one domain, or by domain
+#'   (`by = "domain"`); P10, P50 and P90 are used. Without it the table has `D` and, with `data`,
+#'   the observed pass ages, but no place on the growth chart (`age_reach`, ...) and no `plot()`.
 #' @param data Optional responses with ages: a [kits_resp()], or what it takes (a long data.frame,
 #'   or a wide data.frame of item scores), with `age_m` and `wave_m`. For each item, a logistic
 #'   regression of passing (a score of at least `step`) on age gives the age at which a share `rp`
@@ -43,7 +45,8 @@
 #'   * `DIF`: `"none"`, `"favors girls"`, `"favors boys"` or `"inconsistent"`, from `dif`.
 #'   * `stem`: the item stem (any language), from `stems`; the item id when not given.
 #'   * `age_reach`, `below_range`, `above_range`, `empirical`, `x`: the place on the growth chart
-#'   (the empirical age when there is one, else the age at which the norm median reaches `D`).
+#'   (the empirical age when there is one, else the age at which the norm median reaches `D`);
+#'   only with `norms`.
 #' @examples
 #' set.seed(1)
 #' age <- runif(800, 3, 24)
@@ -66,11 +69,14 @@
 #' thr4 <- rbind(thr, data.frame(item_id = "a5", item_score = 1:4, thr = c(30, 45, 58, 70),
 #'                               domain = "lan"))
 #' kits_item_table(thr4, norm, step = c(a5 = 3))
+#'
+#' # No norm: D and the observed pass ages from the responses only
+#' kits_item_table(thr, data = resp)
 #' p <- plot(item_tab)
 #' p <- plot(item_tab, type = "ladder", ages = c(6, 12, 18))
 #' if (interactive()) p
 #' @export
-kits_item_table <- function(thr, norms, data = NULL, dif = NULL, stems = NULL, rp = 0.5,
+kits_item_table <- function(thr, norms = NULL, data = NULL, dif = NULL, stems = NULL, rp = 0.5,
                             dif_cut = 0.3, step = 1) {
   need_rp(rp)
   need_pass_step(step)
@@ -83,18 +89,20 @@ kits_item_table <- function(thr, norms, data = NULL, dif = NULL, stems = NULL, r
     left_join(table_stems(stems), by = "item_id") |>
     mutate(DIF = coalesce(DIF, "none"), stem = coalesce(stem, item_id))
   attr(items, "rp") <- if (rp != 0.5) rp
-  out <- item_positions(items, norm, rp)
+  out <- if (is.null(norm)) items else item_positions(items, norm, rp)
   out <- kits_table(as.data.frame(out), "kits_item_table")
   if (rp != 0.5) attr(out, "rp") <- rp
   attr(out, "dif_labels") <- table_dif_labels(dif)   # 兩個方向的標籤（plot() 的顏色照方向）
   attr(out, "norm") <- norm
-  attr(out, "scale") <- scale_of(norms)
+  first <- if (is.data.frame(thr) || inherits(thr, "kits_item")) thr else thr[[1]]
+  attr(out, "scale") <- scale_of(if (is.null(norms)) first else norms)
   attr(out, "diagnostics") <- attr(ages, "diagnostics")
   out
 }
 
 # 常模：一個領域一個（by = "domain"，或一個常模）；有其他的組時停下來
 table_norm <- function(norms) {
+  if (is.null(norms)) return(NULL)   # 沒有常模：只有 D 和通過月齡
   abort_if(!is.data.frame(norms), "`norms` must be a kits_norms() result.")
   others <- setdiff(attr(norms, "by"), "domain")
   abort_if(length(others) > 0, "The item table uses one norm per domain; this norm is also by ",
@@ -127,7 +135,7 @@ item_steps <- function(thr, norm, rp = 0.5, step = 1) {
                 class = "kits_message_data")
     steps <- filter(steps, !duplicated(item_id))
   }
-  domains <- unique(norm$domain)
+  domains <- if (is.null(norm)) NA_character_ else unique(norm$domain)
   if (!"domain" %in% names(steps)) {
     abort_if(length(domains) > 1,
              "The norm has several domains (", paste(domains, collapse = ", "), "): give `thr` a `domain` column.")
@@ -235,7 +243,8 @@ plot.kits_item_table <- function(x, type = c("growth", "ladder"), items = NULL,
                                  y_range = NULL, ...) {
   type <- match_option(type, c("growth", "ladder"), "type")
   norm <- attr(x, "norm")
-  abort_if(is.null(norm), "This table keeps no norm; make it with kits_item_table().")
+  abort_if(is.null(norm), "This table has no norm, so it has no growth chart or ladder. ",
+           "Make it with a norm: kits_item_table(thr, norms, data = ).")
   shown <- x[x$item_id %in% pick_items(x$item_id, items), , drop = FALSE]
   attr(shown, "rp") <- attr(x, "rp")
   domains <- unique(shown$domain)
