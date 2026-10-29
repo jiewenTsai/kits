@@ -1,0 +1,817 @@
+---
+title: "kits 進階：題目分析、新波次、公式、量尺的性質"
+format:
+  html:
+    toc: true
+    grid:
+      body-width: 1000px
+vignette: >
+  %\VignetteIndexEntry{kits 進階：題目分析、新波次、公式、量尺的性質}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+options(width = 110)
+```
+
+這份是入門篇（`vignette("kits-flow", package = "kits")`）的續篇。
+入門篇是流程的第 0 到 6 步，這份是第 7 到 10 步：
+
+| 步驟 | 函數 | 做什麼 |
+|---|---|---|
+| 7 題目分析與報告的圖 | `kits_dif()`、`kits_dif_combine()`、`kits_item_table()` 和它的 `plot()` | 性別 DIF 和 LR 檢定、通過月齡、題目的位置、成長曲線和階梯 |
+| 8 新的波次 | `kits_drift()`、`kits_item(fixed_params = )`、`plot(kits_vertical(), type = "median")` | 偏移檢查、固定參數校準、各波次的中位數 |
+| 9 演算法和程式 | `kits_algorithm()`、`algo_` 函數、`inst/scripts/` | 每一步的公式、函數和文獻；拆開的演算法；教學腳本 |
+| 10 量尺的性質 | `kits_convert()` 的 `se_link`、`kits_vertical()`、`kits_precision()`、`kits_expected_score()`、`kits_link_check()`、`summary(link, theta = )`、`coef(item, rp = )`、`kits_item_table(rp = )` | 連結誤差、垂直量尺、精準度、原始分對照、連結的檢查、反應機率、品質管制（Kolen & Brennan, 2014） |
+
+看不懂的詞，查套件 README 的「名詞表」，或 `?"kits-package"` 的 Glossary（英文）。
+
+```{r}
+library(kits)
+library(dplyr)
+library(tidyr)
+library(purrr)
+```
+
+
+## 資料：入門篇的第 0 到 5 步
+
+和入門篇相同的設計：語言 14 題、0–2 分；M03 答第 1–8 題（6、12、24 個月），M36 答第 5–12 題（36、48 個月）。
+M03 另外有動作 6 題，用來一起接到 D。
+這裡只重做一次，不印出來；每一步的說明在入門篇。
+亂數的順序和入門篇不同，所以數字會差一點。
+
+```{r}
+set.seed(11)
+betas <- lapply(seq(-3, 5, length.out = 14), function(b) b + c(-0.6, 0.6))
+names(betas) <- sprintf("lan%02d", 1:14)
+persons <- tibble(cohort = rep(c("M03", "M36"), c(900, 600)),
+                  wave_m = rep(c(6, 12, 24, 36, 48), each = 300)) |>
+  mutate(visit_id = sprintf("%s_%04d", cohort, row_number()), .by = cohort) |>
+  mutate(age_m = wave_m + runif(n(), -1, 1),
+         sex = sample(c("boy", "girl"), n(), replace = TRUE))
+theta <- 2 * log(persons$age_m / 12) + rnorm(nrow(persons), 0, 0.9)
+m03 <- persons$cohort == "M03"
+X03 <- kits_sim(theta[m03], betas[1:8], prefix = "M03_")
+X36 <- kits_sim(theta[!m03], betas[5:12], prefix = "M36_")
+X03[sample(nrow(X03), 12), "lan08"] <- NA
+motor_betas <- as.list(seq(-2.5, 2.5, length.out = 6))
+names(motor_betas) <- sprintf("mot%02d", 1:6)
+Xm03 <- kits_sim(theta[m03] + rnorm(sum(m03), 0, 0.5), motor_betas, prefix = "M03_")
+
+# 1 校準
+item03 <- kits_item(X03, scale = "lan M03")
+item36 <- kits_item(X36, scale = "lan M36")
+itemm03 <- kits_item(Xm03, scale = "motor M03")
+
+# 2 世代連結
+co <- kits_linking(item36, item03)
+
+# 3 接到 D
+pass <- function(item) filter(coef(item), item_score == 1)
+milestone <- bind_rows(as.data.frame(pass(item03)), as.data.frame(pass(itemm03)))
+anchors <- tibble(item_id = c("lan01", "lan02", "lan03", "lan06", "lan07", "mot01", "mot03", "mot05")) |>
+  left_join(select(milestone, item_id, thr), by = "item_id") |>
+  mutate(tau = 60 + 7 * thr + rnorm(n(), 0, 1.5)) |>
+  select(item_id, tau)
+d_link <- kits_linking(list(lan = item03, motor = itemm03), anchors)
+
+# 4 計分與換算
+s03 <- kits_subj(X03, item03, persons = persons) |>
+  kits_convert(d_link)
+s36 <- kits_subj(X36, item36, persons = persons) |>
+  kits_convert(co) |>
+  kits_convert(d_link)
+lan <- rbind(s03, s36)
+
+# 5 常模
+use <- filter(lan, kits_norm_screen(lan)$normed)
+norm <- kits_norms(use, degrees = c(3, 2, 1, 1))
+```
+
+
+## 7 題目分析和報告的圖
+
+圖上的標題、軸、圖例都是英文。
+
+### 7.1 通過月齡要用的資料
+
+每題 50% 通過的月齡，由第 7.3 節的 `kits_item_table(data = )` 算。
+兩個世代一起算，月齡範圍才夠寬。
+先把兩個世代的作答疊成一張寬的表（沒答的題是 NA），再照 `persons` 的列接上月齡和波次。
+`kits_item_table()` 收這種表（`visit_id`、`age_m`、`wave_m`，其他欄是題），也收 `kits_resp()`（入門篇第 0 節）。
+
+```{r}
+answers <- bind_rows(as_tibble(X03, rownames = "visit_id"), as_tibble(X36, rownames = "visit_id"))
+X_all <- persons |>
+  select(visit_id, age_m, wave_m) |>
+  left_join(answers, by = "visit_id")
+```
+
+每一題做一個邏輯斯迴歸：分數至少 1（milestone step）算通過，通過對月齡。
+`age50` 是 NA 的題：通過率在觀察到的月齡裡沒有跨過一半（太容易，或只有大孩子答）。
+完全分開（小的孩子都沒通過、大的都通過）時，迴歸沒有有限的斜率；題目表的診斷列出這些題。
+
+### 7.2 性別 DIF：`kits_dif()`、`kits_dif_combine()`
+
+上面的資料沒有性別差異。
+為了示範，另外模擬一份有性別差異的作答：同樣的題、同樣的能力，男孩一份、女孩一份。
+女孩的步驟參數加上 `shift`：負的對女孩容易，正的對女孩難。
+lan06 在 M03 對女孩容易，在 M36 對女孩難。
+
+```{r}
+shift_betas <- function(b, shift) {
+  b[names(shift)] <- map2(b[names(shift)], shift, `+`)
+  b
+}
+girl03 <- shift_betas(betas[1:8], c(lan03 = -1, lan06 = -0.8, lan07 = 1))
+girl36 <- shift_betas(betas[5:12], c(lan06 = 0.8, lan07 = 0.8, lan09 = -0.8, lan10 = 0.8, lan11 = -0.8))
+Xs03 <- rbind(kits_sim(theta[m03], betas[1:8], prefix = "boy03_"),
+              kits_sim(theta[m03], girl03, prefix = "girl03_"))
+Xs36 <- rbind(kits_sim(theta[!m03], betas[5:12], prefix = "boy36_"),
+              kits_sim(theta[!m03], girl36, prefix = "girl36_"))
+sex03 <- rep(c("boy", "girl"), each = sum(m03))
+sex36 <- rep(c("boy", "girl"), each = sum(!m03))
+```
+
+`kits_dif()` 在一個世代裡比較男孩和女孩的題目參數（以這個領域的總分為條件）。
+方法和 dexter 的 `DIF()` 相同（Bechger & Maris, 2015）：男女各自用 CML 校準，再比較相對的參數。
+每題一個數字，單位是 logit；多點計分的題是各步驟的平均。
+`ref = "boy"`（預設）時，正的對男孩難，也就是有利女孩。
+第二個參數 `group` 可以是每一列一個值，或用 visit_id 當名字的向量。
+性別不是寫成 boy、girl 時，用 `ref` 指定參照組，例如 `kits_dif(X, sex, ref = "M")`。
+
+```{r}
+dif03 <- kits_dif(Xs03, sex03)
+dif36 <- kits_dif(Xs36, sex36)
+dif03
+```
+
+`plot()` 畫每題的 DIF 和 95% 信賴區間。
+超過 `cut`（預設 0.3）的題上色：橘色有利女孩，藍色有利男孩。
+
+```{r, out.width = "100%", fig.height = 4}
+plot(dif03)
+```
+
+`Overall test` 檢定是不是有任何一題有 DIF。
+
+同一次呼叫也做 Andersen（1973）的 LR 檢定：兩組各自校準，看步驟參數是不是一樣。
+印出來的 `LR test` 一行就是它；數字在 `attr(dif03, "lrtest")`，每個步驟的差和 Wald z 在 `attr(dif03, "diff")`。
+人數多時 p 值幾乎都很小，要看差的大小。
+`plot(type = "steps")` 畫每個步驟在兩組的 beta，|z| 超過 1.96 的是橘色：
+
+```{r, out.width = "100%", fig.height = 4}
+plot(dif03, type = "steps")
+```
+
+`group` 也可以是 `"raw"`（每個作答組合裡，原始分的中位數分成高低兩組）或 `"wave"`（一個波次一組）。
+
+`kits_dif_combine()` 把兩個世代合起來判斷（預設 `cut = 0.3` logit）：
+
+* 只有一個世代有的題：用那個世代的結果。
+* 兩邊都沒超過 `cut`：none。
+* 一邊超過 `cut`，另一邊的方向相反：inconsistent。
+* 方向相同、至少一邊超過：取超過的那個方向。
+
+`cohorts` 是兩個世代的名字，用在欄名；沒給時用參數的名字（這裡會是 `dif03`、`dif36`）。
+
+```{r}
+dif <- kits_dif_combine(dif03, dif36, cohorts = c("M03", "M36"))
+dif
+```
+
+模擬時 lan03、lan09、lan11 對女孩容易，lan07、lan10 對女孩難，lan06 在兩個世代方向相反。
+這幾題都找到了。
+lan05 和 lan08 沒有模擬 DIF，卻也超過了 `cut`。
+lan05 是 M36 最容易的題，lan08 是 M03 最難的題：幾乎每個孩子都通過（或都沒通過），所以估得不準。
+看 DIF 時，也要看這題在這個世代裡的位置和人數。
+`DIF` 這一欄接到下面的題目表，圖用它上色。
+
+### 7.3 題目表：`kits_item_table()`
+
+一題一列：milestone step 的 D、50% 通過的月齡（從 `data`）、常模中位數到達的月齡、DIF、題幹。
+門檻表先用 `kits_convert()` 換到 D：
+
+* M03 的題：lan M03 → D。
+* M36 的題：lan M36 → lan M03 → D。
+
+兩個世代都有的題，留第一個（這裡是 M03 的）。
+表裡帶著常模，所以畫圖時不用再給。
+
+```{r}
+thr03 <- coef(item03) |>
+  kits_convert(d_link)
+thr36 <- coef(item36) |>
+  kits_convert(co) |>
+  kits_convert(d_link)
+stems <- tibble(item_id = names(betas), stem = paste("Example item", names(betas)))
+norm <- mutate(norm, domain = "lan")
+item_tab <- kits_item_table(list(thr03, thr36), norm, data = X_all, dif = dif, stems = stems)
+item_tab |>
+  select(item_id, D, age50, age_reach, x, DIF) |>
+  head()
+```
+
+`x` 是題目在圖上的月齡。
+有 50% 通過月齡就用它，沒有就用常模中位數到達這個 D 的月齡（`age_reach`）。
+比最小月齡的 P50 還容易的題，`below_range` 是 `TRUE`；比最大月齡的 P50 還難的題，`above_range` 是 `TRUE`。
+這種題沒有通過月齡時，沒有 `x`。
+
+**每題的通過不一樣時：`step =`。**
+例如認知在高年級有 4 點題（0–3，至少 1 分算通過）和反向的 5 點題（反向後 0–4，至少 3 分算通過）。
+校準不需要「通過」的定義：PCM 讓每題有自己的步驟數，4 點題、5 點題放在同一個校準裡就好。
+要「通過」的只有兩個地方：錨題接到 D（`anchors` 的 `step` 欄，一題一個），和題目表。
+題目表用 `step` 給每題的通過步驟，沒列的題用 1：
+
+```{r, eval = FALSE}
+item_tab <- kits_item_table(thr, norm, data = resp, step = c(cogD01 = 3, cogD02 = 3))
+```
+
+這時 `D` 是那一步的門檻，通過月齡算「至少 `step` 分」，表裡多一欄 `step`。
+不同 step 的題不是同一種里程碑，讀表和圖時要分開看。
+反向計分在整理資料時做（例如 `5 - x`）；同一題在不同波次的點數不同時，要當成兩題（不同的 `item_id`）。
+
+### 7.4 成長曲線與題目：`plot(item_tab)`
+
+點的顏色是性別 DIF：灰色沒有、橘色有利女孩、藍色有利男孩、黑色兩個世代不一致。
+
+```{r, out.width = "100%", fig.height = 5}
+plot(item_tab)
+```
+
+### 7.5 成長階梯：`plot(item_tab, type = "ladder")`
+
+每題一條橫線，放在 milestone step 的 D；顏色和上圖相同。
+右邊的刻度是常模中位數到達這個 D 的月齡，`ages` 給要標的月齡。
+
+```{r, out.width = "100%", fig.height = 6}
+plot(item_tab, type = "ladder", ages = c(6, 12, 24, 36, 48))
+```
+
+### 7.6 男女的常模：`kits_norms(..., by = "sex")`
+
+`by` 給組的欄，每一組配一個常模。
+每一組的常模，和只用這一組的孩子跑 `kits_norms()` 完全相同。
+結果是一張表，組的欄在最前面。
+
+```{r}
+norm_sex <- kits_norms(use, degrees = c(3, 2, 1, 1), by = "sex")
+norm_sex |>
+  select(sex, age_m, P10, P50, P90) |>
+  head()
+```
+
+`plot()` 一組畫一格。
+好幾個領域疊在一起時（有 `domain` 欄），用 `by = c("domain", "sex")`：一列一個領域，一欄一個性別。
+
+```{r, out.width = "100%", fig.height = 4}
+plot(norm_sex)
+```
+
+同齡 z 用自己那一組的曲線：
+
+```{r}
+use |>
+  kits_norm_z(norm_sex) |>
+  summarise(mean_z = mean(z, na.rm = TRUE), .by = sex)
+```
+
+`plot(norm_sex, scores = use)` 也把孩子畫在曲線後面，每一格是自己那一組的孩子。
+
+其他報告的圖用法相同：
+
+* 各波次的中位數：`plot(kits_vertical(s), type = "median")`（第 8.4 節）。
+* `kits_save_plot(p, "fig.html", "fig.png")`：存成互動的 html 和靜態的 png。
+  html 需要 pandoc（RStudio 和 Quarto 都附了；在 RStudio 外面用時設 `RSTUDIO_PANDOC`）。
+  png 需要 webshot2 和一個 Chromium 系的瀏覽器。
+
+
+## 8 新的波次
+
+假設 M36 有兩個新的波次：60、72 個月，各 300 個孩子。
+這兩波加了兩題新題 lan13、lan14。
+另外 lan10 變容易了（偏移）。
+
+```{r}
+new <- tibble(cohort = "M36", wave_m = rep(c(60, 72), each = 300)) |>
+  mutate(visit_id = sprintf("M36new_%04d", row_number()),
+         age_m = wave_m + runif(n(), -1, 1),
+         sex = sample(c("boy", "girl"), n(), replace = TRUE))
+
+new_betas <- betas[5:14]
+new_betas$lan10 <- new_betas$lan10 - 1.2
+X_new <- kits_sim(2 * log(new$age_m / 12) + rnorm(600, 0, 0.9), new_betas, prefix = "M36new_")
+```
+
+幾波一起進來時，疊成一個矩陣。
+資料越多，偏移越容易看出來。
+
+### 8.1 哪些題偏移：`kits_drift()`
+
+新資料自己校準一次，和 `item36` 的門檻比。
+
+```{r}
+drift <- kits_drift(X_new, item36)
+drift
+```
+
+`plot()` 畫新舊門檻和那條線；偏移的題是橘色，建議固定的題是藍色。
+`type = "difference"` 畫每個步驟離線多遠。
+
+```{r, out.width = "100%", fig.height = 4}
+plot(drift)
+```
+
+怎麼讀：
+
+* `drift = TRUE`：這題的門檻離其他題的線太遠，在新資料裡變了。
+* `drift` 是 NA 的題不判斷，`reason` 寫原因。
+* `suggest_fix`：建議固定的題。
+* 新題（lan13、lan14）不在 `item36` 裡，不判斷。
+
+不判斷的題（`drift` 是 NA）：
+
+* 沒有一個步驟有足夠的資訊：步驟以下、以上都要至少 `min_n` 個人。
+  例如幾乎每個孩子都通過的題，最低的步驟沒有資訊。
+* 只有一種分數、沒有 0 分，或分數有缺口（例如有 0、2，沒有 1）：新資料不能自己校準它。
+* 新資料的最高分比 `item36` 高（`reason` 是 "score range differs"）：多了一個步驟。
+  門檻由這題所有的步驟一起決定，所以舊步驟的門檻也會變，不能直接比。
+
+建議固定的題（`suggest_fix = TRUE`）：
+
+* 判斷過、沒有偏移的題。
+* 資訊太少、不能判斷的題：它們的門檻估得很差，殘差大不代表偏移。
+  它們在這一波本來就幾乎沒有資訊，固定不固定，對分數的影響都很小。
+* 新資料沒有 0 分或只有一種分數的題（`reason` 是 "no 0 score or one score only"）：只有 `item36` 的參數可用。
+* 最高分比 `item36` 高的題：`kits_item()` 固定它舊的步驟，只估新的步驟。
+
+不建議固定：偏移的題（要重新估）。
+最後固定哪些題，由你決定。
+
+限制：
+
+* 一題本身要有足夠的資訊，它的偏移才找得到。
+* 能判斷的題太少時（例如只有三、四題），偏移可能被線吸收。
+* 多點計分的題幾個步驟一起偏移時，常常是斜率被拉走，而不是這一題被拿掉。
+* 線的斜率也值得看：斜率離 1 很遠，表示新資料的單位和 `item36` 不同。
+
+### 8.2 固定參數校準
+
+`drift$fix` 是建議固定的題在 `item36` 的參數，直接交給 `kits_item()`。
+偏移的題和新題重新估。
+新的校準自動在 lan M36 上（固定參數的量尺），不是資料的名字 `X_new`。
+
+```{r}
+item_new <- kits_item(X_new, fixed_params = drift$fix)
+item_new
+```
+
+固定的題 SE 是 0；印出來的表頭說固定了幾題，`fixed` 欄標出是哪幾題。
+要看偏移的題和新題：
+
+```{r}
+coef(item_new) |>
+  filter(item_id %in% c("lan10", "lan13", "lan14"))
+```
+
+想改名單時，直接改這個表，例如 `filter(drift$fix, item_id != "lan06")`。
+固定參數要用某個世代自己的量尺（這裡是 M36），不能用換算過的參數。
+
+### 8.3 計分與常模
+
+新的校準在 lan M36 上，所以沿用原本的 `co` 和 `d_link`。
+
+```{r}
+s_new <- kits_subj(X_new, item_new, persons = new) |>
+  kits_convert(co) |>
+  kits_convert(d_link)
+s_new |>
+  summarise(median = median(theta), .by = wave_m)
+```
+
+原本的常模只到 `r max(norm$age_m)` 個月，新的波次超出這個範圍。
+所以常模要用所有波次重配，步驟和入門篇第 5 節一樣。
+兩個表都在 D 上，才疊得起來。
+
+```{r}
+lan_all <- rbind(lan, s_new)
+screen_all <- kits_norm_screen(lan_all)
+use_all <- filter(lan_all, screen_all$normed)
+norm_all <- kits_norms(use_all, degrees = c(3, 2, 1, 1))
+range(norm_all$age_m)
+s_new <- s_new |>
+  kits_norm_z(norm_all)
+s_new |>
+  filter(!is.na(z)) |>
+  summarise(mean = mean(z), sd = sd(z), .by = wave_m)
+```
+
+新波次也一起檢查：
+
+```{r}
+kits_check(drift, item_new, s_new, norm_all)
+```
+
+### 8.4 各波次的中位數：`plot(v, type = "median")`
+
+`kits_vertical()` 給每個世代 × 波次一列。
+裡面有中位數、P25、P75、人數，和實際月齡的中位數（`age_med`）。
+
+```{r}
+v_all <- kits_vertical(lan_all)
+v_all |>
+  select(cohort, wave_m, n, age_med, median, P25, P75)
+```
+
+`plot(type = "median")` 畫中位數，線段是 P25 到 P75，點在實際月齡的中位數。
+月齡和波次差超過 1 個月時，標題下面會註明。
+
+```{r, out.width = "100%", fig.height = 4.5}
+plot(v_all, type = "median")
+```
+
+好幾個領域時，每個領域各做一次 `kits_vertical()`，再疊起來：
+`list(lan = v_lan, motor = v_motor) |> list_rbind(names_to = "domain")`。
+一個領域畫一格。
+
+### 分批進來時
+
+資料一波一波進來時，用一個題庫（`bank`）。
+目標是：舊的 `beta` 永遠不變，以前的分數也不用再估；每一波只估新加入的人。
+每個步驟第一次估出來就放進題庫，之後不再動。
+`kits_drift()` 的 `ref` 可以只有 `item_id`、`item_score`、`beta`，門檻由它自己算。
+
+偏移的題在這一波當成新題：改一個題號（這裡加 `_w2`），自由估計。
+其他共同題照 `drift$fix` 固定，當作錨。
+題庫裡舊的 lan10 留給以前的波次，新的 lan10_w2 給這一波以後用。
+偏移的題太多時（例如超過能判斷的共同題的 20%，或固定的題少於 5 題），就停下來，由人決定怎麼辦。
+
+```{r}
+bank <- coef(item36)[c("item_id", "item_score", "beta", "beta_se")]
+drift_1 <- kits_drift(X_new, bank)
+moved <- drift_1$items$item_id[drift_1$items$drift %in% TRUE]
+colnames(X_new)[colnames(X_new) %in% moved] <- paste0(moved, "_w2")
+item_1 <- kits_item(X_new, fixed_params = drift_1$fix)
+new_steps <- anti_join(coef(item_1), bank, by = c("item_id", "item_score"))
+bank <- rbind(bank, new_steps[names(bank)])
+```
+
+題庫只加進原本沒有的步驟：新題（lan13、lan14）、偏移題的新版本（lan10_w2），和舊題新出現的更高分。
+下一波重複這幾行，`X_new` 換成新的資料，題號先換成每題最新的版本。
+舊題多了一個步驟時，舊步驟的 `beta` 固定不變。
+但舊步驟的門檻（RP50）會變，因為門檻由這題所有的步驟一起決定。
+所以每一波的分數要在那一波算好、存下來；用後來的題庫重算，數字會稍微不同。
+新步驟中間有缺口時（例如有人拿 3 分、沒人拿 2 分），`kits_item()` 會停下來。
+這時先把這一波這題的分數往下併到已固定的最高步，等之後的波次再估新的步驟。
+完整的例子在 `?kits_item`。
+
+
+## 9 演算法和程式
+
+### 9.1 演算法：`kits_algorithm()`
+
+每個結果都可以說出它背後的演算法。
+`kits_algorithm()` 印大約 30 行：每一步一個公式、跑這些步驟的函數（`|>` 接起來）、主要的文獻、去哪裡讀更多。
+公式裡的門檻寫成 thr_ik（欄名 `thr`）；`tau` 只用在錨題的 GSED 難度。
+給結果時，`This result` 一行是這個結果自己的數字和量尺。
+
+```{r}
+kits_algorithm(co)
+```
+
+給主題也可以：`"cml"`、`"wle"`、`"link"`、`"norms"`、`"norm_screen"`、`"dif"`、`"drift"`、`"information"`。
+
+### 9.2 拆開的演算法：`algo_` 函數
+
+`Components` 裡的 `algo_` 函數是演算法本身：給數字、回數字，不記量尺、不檢查輸入。
+接起來就是 kits 的結果，例如 `kits_stats(X) |> algo_cml() |> algo_thresholds()` 是 `kits_item(X)` 的門檻（入門篇第 1 節）。
+人的分數是 `algo_jme()`。
+kits 叫它 WLE；對 PCM，WLE 和 Jeffreys 眾數估計相同，kits 算的是後者（Warm, 1989; Firth, 1993; Magis, 2015）。
+它給每個原始分一個 θ 和 SE；答完 8 題的孩子，和 `kits_subj()` 相同：
+
+```{r}
+cml03 <- kits_stats(X03) |>
+  algo_cml()
+jme03 <- algo_jme(cml03$betas)
+full03 <- filter(kits_subj(X03, item03), raw_max == 16)
+all.equal(full03$theta, jme03$theta[full03$raw + 1])
+```
+
+校準的結果也包著幾個物件：
+`item03$stats`（充分統計量）、
+`kits_information(item03)`（測驗訊息）和 `kits_expected_score(item03)`（期望原始分），兩個都是 θ 的函數。
+
+```{r}
+item03$stats
+information <- kits_information(item03)
+information(c(-2, 0, 2))
+```
+
+這兩個函數一題一題拆開，就是 `kits_pcm_prob(item03, theta)`：每題的類別機率 P(X = x | θ)、期望分數和變異數（題目訊息）。
+`kits_esf()` 正好反過來：給定原始分 r 的條件機率 P(X = x | r)，裡面沒有 θ。
+
+```{r}
+pp <- kits_pcm_prob(item03, seq(-4, 4, by = 1))
+pp
+```
+
+### 9.3 教學腳本：`inst/scripts/`
+
+`kits_algorithm()` 的最後一行指到一份教學腳本，和它分成的段落（`parts`）。
+腳本是固定的 R 程式：用示範資料一步一步重算，模型用 RTMB 寫，最後和 kits 的結果對答案。
+換成自己的資料，改開頭的「inputs」那一段。
+
+```{r}
+list.files(system.file("scripts", package = "kits"))
+```
+
+例如校準的腳本是 `system.file("scripts", "cml.R", package = "kits")`，複製出來就能跑。
+
+
+## 10 量尺的性質（Kolen & Brennan, 2014）
+
+這一節的方法來自 Kolen 和 Brennan（2014）的 *Test Equating, Scaling, and Linking*（第 3 版）。
+括號裡是書上印的頁碼。
+連結誤差要用重抽，所以這裡的連結都用 `n_boot = 200`。
+
+```{r}
+co_b <- kits_linking(item36, item03, n_boot = 200)
+d_b <- kits_linking(list(lan = item03, motor = itemm03), anchors, n_boot = 200)
+```
+
+### 10.1 每個 θ 的連結誤差
+
+`n_boot > 0` 的連結留下每次重抽的線（`co_b$draws`）。
+在 θ 的連結誤差是 intercept + slope θ 在重抽之間的 SD（pp. 249-252）。
+θ = 0 時就是截距的誤差 `intercept_error`；離 0 越遠，斜率的誤差影響越大。
+一串連結（M36 → M03 → D）的兩條線用不同的題，所以重抽是獨立的（pp. 257-258、269-270）。
+選定的 θ 也用 `kits_convert()` 換算：把它們放在一張有 `theta` 的表裡。
+換算後的 `theta` 在 D 上，`se_link` 是這個位置的連結誤差。
+這張表沒有記下量尺，所以用 `from` 說它在 lan M36 上。
+例如 M36 各波次的中位數：
+
+```{r}
+s36_raw <- kits_subj(X36, item36, persons = persons)
+med36 <- s36_raw |>
+  summarise(theta = median(theta), .by = wave_m)
+med36 |>
+  kits_convert(co_b, d_b, from = "lan M36")
+```
+
+每條連結都有重抽時，`kits_convert()` 加上 `se_link` 和 `se_total = √(se² + se_link²)`。
+有一條沒有重抽（例如上面的 `co`）時，不加欄。
+`se_link` 只是連結題目抽樣的誤差。
+同一個世代裡比孩子時，大家用同一條線，不需要它；跨世代比較或報告 D 的不確定性時才需要。
+
+```{r}
+s36_b <- s36_raw |>
+  kits_convert(co_b) |>
+  kits_convert(d_b)
+s03_b <- kits_subj(X03, item03, persons = persons) |>
+  kits_convert(d_b)
+rbind(s03_b, s36_b) |>
+  summarise(across(c(se, se_link, se_total), median), .by = wave_m)
+```
+
+### 10.2 斜率和 1 比
+
+PCM 沒有鑑別度，所以 PCM 的連結只需要平移（Masters, 1984；p. 229）。
+kits 保留自由的斜率，並在診斷裡比較斜率和 1：
+
+```{r}
+summary(co_b)$diagnostics |>
+  filter(check == "slope vs 1")
+```
+
+`(slope - 1) / slope_error` 的絕對值超過 2 時是 `note`：量尺在兩次校準之間伸縮了，題目的鑑別力不同，值得在報告中說明。
+接到錨題（D）的連結不比，因為兩邊的單位不同。
+
+### 10.3 接到 D 的用語
+
+用錨題接到 D 是校準（calibration）或量尺對齊（scale aligning），不是等化（pp. 493-500）。
+換算後的 D 能怎麼解釋，要看 KIT 和 GSED 的構念、母群和施測條件有多相似。
+
+### 10.4 波次是垂直量尺：`kits_vertical()`
+
+分數都在 D 上之後，每個世代 × 波次算一列（pp. 461-469）。
+`sd_true` 是扣掉測量誤差的 SD。
+0 分或滿分的孩子很多時，`sd_true` 會低估，要當成下限來讀。
+`effect_size` 是書上的 Eq. 9.47；`p_sup` 是這一波的孩子高過前一波孩子的機率，只看順序。
+KIT 的 36 和 48 個月兩個世代都有；這種波次另外比較（`attr(v, "cohorts")`），分數有 `se_link` 時也算進連結誤差。
+這份模擬資料的兩個世代沒有共同的波次，所以沒有這張表。
+
+```{r}
+v <- kits_vertical(rbind(s03_b, s36_b))
+v
+```
+
+最大的波次的 `sd_true` 比前面小很多時，診斷會註記量尺縮小（scale shrinkage，p. 468）。
+
+`plot(v)` 畫平均 ± SD。
+
+```{r, out.width = "100%", fig.height = 4}
+plot(v)
+```
+
+`plot(v, type = "median")` 畫中位數，線段是 P25 到 P75。
+
+```{r, out.width = "100%", fig.height = 4}
+plot(v, type = "median")
+```
+
+### 10.5 量尺上的精準度：`kits_precision()`
+
+每個題本在量尺的每個位置量得多準（pp. 405、413、463-465）。
+原始分的分佈用 Lord-Wingersky 遞迴（p. 232），原始分換成和 `kits_subj_table()` 相同的 WLE。
+`rmse` 結合偏誤和 SD；可用範圍是 RMSE 小於 `criterion` 的區間。
+這裡兩個世代的題本都換到 D，`criterion` 用 D 的單位（5 D）。
+
+```{r}
+pr03 <- kits_precision(item03, list(M03 = colnames(X03)), link = d_b, criterion = 5)
+pr36 <- kits_precision(item36, list(M36 = colnames(X36)), link = list(co_b, d_b), criterion = 5)
+rbind(attr(pr03, "ranges"), attr(pr36, "ranges"))
+```
+
+給 `kits_subj_table()` 的結果時，每個波次的題本各一條曲線。
+
+```{r, out.width = "100%", fig.height = 4}
+plot(pr03)
+```
+
+### 10.6 兩組題的原始分對照：`kits_subj_table()` 和 `kits_expected_score()`
+
+同一個校準裡的兩組題，一組的原始分在另一組大約是幾分？
+例如少答 lan08 的孩子（7 題），在完整的 8 題上的期望原始分。
+先從 `kits_subj_table()` 拿這個作答組合每個原始分的 θ（WLE），再代進完整題本的期望分數：
+
+```{r}
+tab7 <- kits_subj_table(item03) |>
+  filter(pattern_id == "bk2")              # 少答 lan08 的作答組合（7 題）
+mutate(tab7, full = kits_expected_score(item03)(theta))   # 完整 8 題的期望原始分
+```
+
+PCM 的原始分是充分統計量，所以原始分 → θ 的表就是計分；兩組題不需要另外做原始分對原始分的等化（Kolen & Brennan, 2014, §6.4）。
+固定的一組題 S 的分量表分數是 `kits_expected_score(item, items = S)(theta)`，SE 是 I~S~(θ) × SE(θ)，I~S~ 來自 `kits_information(item, items = S)`。
+
+### 10.7 世代連結的獨立檢查：`kits_link_check()`
+
+世代連結只靠共同題的門檻。
+書上建議再用別的方法檢查同一條線（pp. 190、238、295-296）。
+`kits_link_check()` 用兩個不靠篩過的共同題的方法：
+
+* 同齡的兩群（pp. 431-432）：兩個世代都有的波次，各自在自己的量尺上估能力分佈（常態），再對齊平均和 SD。
+* 合併校準（concurrent CML）：兩個世代的資料疊起來一起校準，再把兩個單獨的校準換到合併的量尺上。
+
+這份模擬資料的兩個世代沒有共同的波次。
+KIT 的 36 和 48 個月兩個世代都有。
+所以這裡多模擬 M03 的一個 36 個月的波次。
+這一波的題本是 lan03 到 lan10，所以 M03 的校準多了 lan09、lan10。
+
+```{r}
+p36 <- tibble(cohort = "M03", wave_m = 36, visit_id = sprintf("M03x_%04d", 1:300)) |>
+  mutate(age_m = 36 + runif(n(), -1, 1))
+X03_36 <- kits_sim(2 * log(p36$age_m / 12) + rnorm(300, 0, 0.9), betas[3:10], prefix = "M03x_")
+items_x <- sprintf("lan%02d", 1:10)
+X03x <- matrix(NA, nrow(X03) + 300, 10, dimnames = list(c(rownames(X03), p36$visit_id), items_x))
+X03x[rownames(X03), colnames(X03)] <- X03
+X03x[p36$visit_id, colnames(X03_36)] <- X03_36
+item03x <- kits_item(X03x, scale = "lan M03x")
+co_x <- kits_linking(item36, item03x, n_boot = 200)
+persons_x <- bind_rows(select(persons, visit_id, wave_m), select(p36, visit_id, wave_m))
+chk <- kits_link_check(co_x, item36, item03x, X36, X03x, persons = persons_x)
+chk
+```
+
+怎麼讀：
+
+* 上面的表是三條線：共同題（原本的連結）、同齡的兩群、合併校準。
+* `Shared waves` 是兩個世代在 36 個月的能力分佈，各自在自己的量尺上（M36 和 M03x）。
+* `At theta` 是在 M36 各波次的中位數，三條線的換算值和差（`diff`）。
+* `z` 是差除以連結的連結誤差；`z_both` 再加上同齡兩群的抽樣誤差（`se_method`）。
+* 差超過 2 時有註記。
+
+同齡的兩群假設兩個世代同年齡的孩子來自同一個母群。
+兩個世代出生的年份不同，測過的次數也不同（世代效果）。
+所以同齡的線和連結不同時，不一定是連結錯了，也可能是世代真的不同。
+合併校準用所有的共同題，包括篩點丟掉的題，所以它假設共同題沒有偏移。
+
+### 10.8 篩點的規則：`spread`、`unit`
+
+預設的規則：殘差超過 2 個 SD 的點丟掉，一個步驟一個點。
+`spread` 換篩點的尺度（pp. 190、202-203、288-289）：
+
+* `"sd"`（預設）：|e| > cut × SD(e)。
+* `"mad"`：|e| > cut × 1.4826 × MAD(e)，離群的點不會把邊界撐寬。
+* `"se"`：殘差除以兩邊門檻的 SE；錨題（GSED 的 `tau`）沒有 SE，只用 KIT 這邊的。
+  這只適合小樣本：KIT 的 `thr_se` 很小，篩掉的點會太多。
+
+`unit = "item"` 時，一題有一個步驟被標記，整題都丟掉（書上篩的是整題）。
+
+```{r}
+rules <- expand_grid(unit = c("step", "item"), spread = c("sd", "mad", "se")) |>
+  mutate(link = map2(spread, unit, \(sp, u) kits_linking(item36, item03, spread = sp, unit = u)))
+rules |>
+  transmute(spread, unit,
+            intercept = map_dbl(link, "intercept"),
+            slope = map_dbl(link, "slope"),
+            dropped = map_chr(link, \(l) paste(l$dropped, collapse = " ")))
+```
+
+連結記下用的規則（`settings$spread`、`settings$unit`），`kits_algorithm(link)` 的 `This result` 一行寫出這個規則。
+
+篩點把換算值移動多少？
+`summary(link, theta = )` 比較篩點前（所有點）和篩點後的線。
+比較的表在 `$screening`，這裡用 M03 各波次的中位數：
+
+```{r}
+s03_raw <- kits_subj(X03, item03, persons = persons)
+med03 <- s03_raw |>
+  summarise(median = median(theta), .by = wave_m)
+summary(d_b, theta = med03$median)$screening
+```
+
+`shift` 是篩點後減篩點前（D 的單位），`z` 是移動量除以這個位置的連結誤差。
+這裡沒有篩掉錨題，所以 `shift` 是 0。
+
+有領域的連結（D 連結），印出來多一行：留下的點在各領域的數目。
+
+```{r}
+d_b
+```
+
+一個領域超過 2/3 時有註記：共同題（錨題）應該是整份測驗的縮影（p. 239）。
+KIT 的 D 連結留下的錨題大多是動作，會有這個註記。
+
+兩個校準之間的連結，也看共同題佔各校準題數的比例（p. 288）：
+
+```{r}
+summary(co_b)$diagnostics |>
+  filter(check == "common items / items")
+```
+
+低於 20% 時有註記。
+書上這個經驗法則是給 40 題以上的測驗。
+
+### 10.9 反應機率（RP）：`coef(item, rp = )`、`kits_item_table(rp = )`
+
+門檻 `thr` 是 RP50：能力在這裡時，得到 k 分以上的機率是 .5。
+題目地圖（item mapping）常用更高的 RP，例如 .8（pp. 414-419）。
+`coef(item, rp = 0.8)` 給 RP80 的門檻：
+
+```{r}
+coef(item03) |>
+  select(item_id, item_score, thr) |>
+  mutate(thr80 = coef(item03, rp = 0.8)$thr) |>
+  head()
+```
+
+RP 越高，題目放在越高的位置。
+接到 D 一直用 RP50，因為 GSED 的 `tau` 就是 RP50（一半的孩子通過的 D）。
+RP80 的門檻換到 D，用同一條線：`kits_convert(coef(item03, rp = 0.8), d_link)`。
+
+月齡也一樣。
+`kits_item_table(rp = 0.8)` 用 RP80 的 D 放題目，月齡也換成 80% 的孩子通過的月齡（`age80`）：
+
+```{r}
+thr80 <- coef(item03, rp = 0.8) |>
+  kits_convert(d_link)
+item_tab80 <- kits_item_table(thr80, norm, data = X_all, rp = 0.8)
+item_tab80 |>
+  select(item_id, D, age80, x) |>
+  head()
+```
+
+`thr` 的 RP 要和 `rp` 一樣，不一樣時函數會停下來。
+每個波次都已經超過 80% 的孩子通過時，`age80` 是 NA。
+兩種圖（`plot(item_tab80)`、`type = "ladder"`）會標出 RP。
+
+### 10.10 新波次的品質管制
+
+每次新的波次進來，照這張表檢查（Kolen & Brennan, 2014，Table 8.8 p. 336、p. 333）：
+
+1. 固定參數前先檢查偏移：`kits_drift()`（pp. 288-289）。
+2. 固定在原本的校準：`drift` 對第一次的校準做，不對上一次的更新做，誤差才不會累積（pp. 293-294）。
+3. 雙重連結：用第二條路接到目標量尺（另一個世代的同齡波次，或直接用錨題），比較換算值：`kits_link_check()`、`kits_convert()` 的 `se_link`（pp. 295-296）。
+4. 作答組合的人數：Rasch 模型每個作答組合約 400 人次（p. 304）；`kits_item()` 的診斷 `smallest main item pattern`。
+5. 共同題的比例：至少 20%，內容是整份測驗的縮影（pp. 239、288）；連結的診斷 `common items / items`、`domain balance of kept points`。
+6. 和另一個世代同年齡的結果一致（p. 333）：`kits_vertical()` 的世代比較（`z`、`z_link`、`sd_ratio`）。
+7. md5 來源：確認用的是對的資料和對的換算（p. 333）：`kits_info()`。
+
+`?kits_check` 也有這張表。
+新的檢查都在 `kits_check()` 裡：
+
+```{r}
+kits_check(item03x, co_x, chk, d_b)
+```
+
+
+## 引用
+
+`citation("kits")` 是 kits 本身。
+用到的方法，原始文獻列在 `?"kits-package"` 的 References，例如 PCM（Masters, 1982）、WLE（Warm, 1989）、
+mean/sigma（Marco, 1977）、D score（Weber et al., 2019）、shash（Jones & Pewsey, 2009）、
+cNORM（Lenhard & Lenhard, 2021）、DIF（Bechger & Maris, 2015）、
+連結誤差、垂直量尺和原始分對照（Kolen & Brennan, 2014）。

@@ -1,0 +1,4 @@
+^data-raw$
+^tests/testthat/fixtures/fit_ref/make_fit_ref\.R$
+^tests/testthat/fixtures/fit_ref/make_lrtest_ref\.R$
+^LICENSE\.md$

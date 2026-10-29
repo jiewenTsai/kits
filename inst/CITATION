@@ -1,0 +1,8 @@
+bibentry(
+  bibtype = "Manual",
+  title = "kits: Psychometric Tools for the Kids in Taiwan Developmental Scale",
+  author = person("Jie-Wen", "Tsai"),
+  year = "2026",
+  note = paste("R package version", meta$Version),
+  header = "To cite kits in publications use:"
+)

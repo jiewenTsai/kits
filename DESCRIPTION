@@ -1,0 +1,117 @@
+Package: kits
+Title: Psychometric Tools for the Kids in Taiwan Developmental Scale
+Version: 0.25.0
+Authors@R: person("Jie-Wen", "Tsai", email = "tsai.jiewen@gmail.com", role = c("aut", "cre"))
+Description: Tools for the developmental scale of KIT (Kids in Taiwan: National
+    Longitudinal Study of Child Development and Care). Each model is written
+    once and 'RTMB' gives every derivative (the conditional maximum likelihood,
+    the person scores, the threshold standard errors, the norms); the
+    closed-form steps use base R, and the data are handled with 'dplyr',
+    'tidyr' and 'purrr'. Items are calibrated with the partial credit model
+    (Masters, 1982) <doi:10.1007/BF02296272> by conditional maximum likelihood,
+    written as the elementary symmetric functions of the step parameters.
+    Cohorts are linked by mean/sigma (Marco, 1977)
+    <doi:10.1111/j.1745-3984.1977.tb00033.x> on the Thurstonian thresholds, and
+    anchor items link to the D score of the Global Scales for Early Development
+    (Weber et al., 2019) <doi:10.1136/bmjgh-2019-001724>. Person scores are
+    weighted likelihood estimates (Warm, 1989) <doi:10.1007/BF02294627>; for the
+    partial credit model they equal the Jeffreys modal estimates (Firth, 1993)
+    <doi:10.1093/biomet/80.1.27> (Magis, 2015) <doi:10.1007/s11336-013-9378-5>,
+    which are computed by the Newton method of 'RTMB', one per item set and raw
+    score. Norms are continuous sinh-arcsinh norms (Jones and Pewsey, 2009)
+    <doi:10.1093/biomet/asp053> fitted by maximum likelihood with the
+    polynomial model and bounds of 'cNORM' (Lenhard and Lenhard, 2021)
+    <doi:10.1177/0013164420928457>, minimised by nlminb with the gradient and
+    Hessian of 'RTMB'. Differential item
+    functioning combines the likelihood-ratio test of Andersen (1973)
+    <doi:10.1007/BF02291180> with the item-pair test of Bechger and Maris (2015)
+    <doi:10.1007/s11336-014-9408-y>, computed by CML in each group. The linking
+    error at each score and through a chain of links, the statistics of the
+    waves as a vertical scale, the precision of each form across the scale, and
+    IRT true-score and observed-score equating of raw scores follow Kolen and
+    Brennan (2014) <doi:10.1007/978-1-4939-0317-7>. The plots are drawn with
+    'plotly'. The algorithms are also exported as plain functions (the 'algo_'
+    layer) that chain with the pipe, and kits_algorithm() names the steps,
+    formulas and references behind a result; teaching scripts in 'inst/scripts'
+    recompute the estimates with 'RTMB' on the demo data. The companion package
+    'kitsPreview' computes the same results with 'dexter' and 'cNORM' for
+    validation.
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+LazyDataCompression: xz
+Language: en-US
+Depends: R (>= 4.1.0)
+Imports:
+    RTMB,
+    dplyr (>= 1.1.0),
+    graphics,
+    grDevices,
+    htmlwidgets,
+    plotly,
+    purrr (>= 1.0.0),
+    stats,
+    tidyr (>= 1.3.0),
+    tools,
+    utils,
+    vctrs (>= 0.6.0)
+Suggests:
+    cNORM,
+    dexter,
+    kitsPreview,
+    knitr,
+    quarto,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    webshot2
+VignetteBuilder: quarto
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.1.0
+Collate: 
+    'ability.R'
+    'algo.R'
+    'algorithm.R'
+    'anchors.R'
+    'as_data_frame.R'
+    'calibrate.R'
+    'cml.R'
+    'conditions.R'
+    'data.R'
+    'diagnostics.R'
+    'dif.R'
+    'drift.R'
+    'esf.R'
+    'fit.R'
+    'info.R'
+    'item_map.R'
+    'item_table.R'
+    'items.R'
+    'kits-package.R'
+    'kits.R'
+    'labels.R'
+    'line.R'
+    'link.R'
+    'link_check.R'
+    'link_se.R'
+    'link_steps.R'
+    'methods.R'
+    'norms.R'
+    'norms_screen.R'
+    'norms_shash.R'
+    'norms_steps.R'
+    'pcm_core.R'
+    'style.R'
+    'plots.R'
+    'plots_results.R'
+    'precision.R'
+    'print.R'
+    'resp.R'
+    'restscore.R'
+    'scale.R'
+    'score.R'
+    'simulate.R'
+    'stats.R'
+    'utils.R'
+    'vctrs.R'
+    'vertical.R'
