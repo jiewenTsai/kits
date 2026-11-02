@@ -1,3 +1,12 @@
+# kits 0.25.3
+
+Tests only; every result is identical to 0.25.2.
+
+* `test-v023.R` compares the 0.23.0 linking (intercept, slope, errors, covariance, bootstrap draws) with the
+  0.22.0 numbers to 1e-12 instead of exactly. The 0.22.0 numbers were computed on Linux; on Windows and
+  macOS the floating-point results differ in the 15th–16th digit, so `R CMD check` failed there
+  (r-universe showed red).
+
 # kits 0.25.2
 
 Faster: speed fixes only. Every result is identical to 0.25.1 (checked with `identical()` on the

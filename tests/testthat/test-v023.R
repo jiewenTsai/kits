@@ -15,20 +15,23 @@ old <- readRDS(test_path("fixtures", "ab022.rds"))   # kits 0.22.0 算的，同�
 
 # ---- a、b 改名 intercept、slope ----------------------------------------------------------------------
 
-test_that("intercept、slope：0.22.0 的 a（截距）、b（斜率），數字完全相同；誤差、共變異數、重抽跟著改名", {
+test_that("intercept、slope：0.22.0 的 a（截距）、b（斜率），數字相同（到 1e-12）；誤差、共變異數、重抽跟著改名", {
+  # 0.22.0 的數字是在 Linux 上算的；Windows、macOS 的浮點運算在第 15、16 位數不同（例如
+  # 1.1781310094671746 和 1.1781310094671764），所以比到 1e-12，不比完全相同
+  same <- function(x, y, n) expect_equal(x, y, tolerance = 1e-12, info = n)
   for (n in c("co", "d_link")) {
     new <- get(n)
     was <- old[[n]]
-    expect_identical(new$intercept, was$a, info = n)
-    expect_identical(new$slope, was$b, info = n)
-    expect_identical(new$intercept_error, was$a_error, info = n)
-    expect_identical(new$slope_error, was$b_error, info = n)
-    expect_identical(new$vcov[["intercept", "slope"]], was$ab_cov, info = n)
-    expect_identical(new$vcov[["slope", "intercept"]], was$ab_cov, info = n)
-    expect_identical(new$intercept0, was$a0, info = n)
-    expect_identical(new$slope0, was$b0, info = n)
-    expect_identical(unname(new$draws[, "intercept"]), unname(was$draws[, "a"]), info = n)
-    expect_identical(unname(new$draws[, "slope"]), unname(was$draws[, "b"]), info = n)
+    same(new$intercept, was$a, n)
+    same(new$slope, was$b, n)
+    same(new$intercept_error, was$a_error, n)
+    same(new$slope_error, was$b_error, n)
+    same(new$vcov[["intercept", "slope"]], was$ab_cov, n)
+    same(new$vcov[["slope", "intercept"]], was$ab_cov, n)
+    same(new$intercept0, was$a0, n)
+    same(new$slope0, was$b0, n)
+    same(unname(new$draws[, "intercept"]), unname(was$draws[, "a"]), n)
+    same(unname(new$draws[, "slope"]), unname(was$draws[, "b"]), n)
   }
   expect_identical(colnames(co$draws), c("intercept", "slope"))
   expect_identical(dimnames(co$vcov), list(c("intercept", "slope"), c("intercept", "slope")))
