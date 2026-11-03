@@ -9,14 +9,14 @@
 # - the correlations between domains (same wave) and between adjacent waves, corrected for
 #   measurement error;
 # - the spread of age around each wave (percentiles), and the share of boys.
-# The real cohort M03 stops at 48 months. The demo M03 cohort goes on to 60 and 72 months:
-# there its children answer like the real M36 children of that age (M36 item parameters,
-# booklets, wave means and SDs, age spread). Each child keeps its rank from its own earlier
-# waves (the M36 correlation between adjacent waves). M03 item parameters would not do:
-# in the real M03 data these items were answered only up to 48 months.
+# M03 has its own waves at 3 to 72 months, M36 at 36 to 96 months.
 #
 # Run from the kits/ folder with kits installed: Rscript data-raw/kit_demo.R
-# Needs the real data in ../../kit_five_20261024 (not part of the package).
+# Needs the real data (not part of the package):
+# - M36: the KIT folder kit_five_20261024 (KIT_DIR);
+# - M03, 3 to 72 months: the long files m03_m003m048_long.csv.gz and m03_m060m096g2_long.csv.gz
+#   (KIT_M03_DIR). They hold the same rows as kit_five_20261024 at 3 to 48 months, with other
+#   child ids, and go on to 96 months; only the waves in WAVES are used.
 
 library(kits)
 library(dplyr)
@@ -25,7 +25,8 @@ library(purrr)
 
 N_CHILDREN <- 500
 SEED <- 20261028
-KIT <- "../../kit_five_20261024"
+KIT <- Sys.getenv("KIT_DIR", "../../kit_five_20261024")
+KIT_M03 <- Sys.getenv("KIT_M03_DIR", "../../kit_m03_long")
 WAVES <- list(M03 = c(3, 6, 12, 18, 24, 36, 48, 60, 72), M36 = c(36, 48, 60, 72, 84, 96))
 DOMAINS <- c("lan", "motor")
 
@@ -34,8 +35,17 @@ DOMAINS <- c("lan", "motor")
 old <- setwd(KIT)
 kit <- new.env()
 sys.source("R/functions.R", envir = kit)
-resp <- suppressMessages(kit$read_responses())
+resp_m36 <- suppressMessages(kit$read_responses()) |>
+  filter(sample == "M36")
 setwd(old)
+# The M03 files already have the kits names; back to the KIT names used in this section
+resp_m03 <- file.path(KIT_M03, c("m03_m003m048_long.csv.gz", "m03_m060m096g2_long.csv.gz")) |>
+  map(\(f) readr::read_csv(f, show_col_types = FALSE)) |>
+  list_rbind() |>
+  filter(wave_m %in% WAVES$M03) |>
+  rename(person_id = visit_id, pid = subj_id, sample = cohort)
+resp <- bind_rows(resp_m03, resp_m36) |>
+  filter(domain %in% DOMAINS)
 
 persons <- resp |>
   distinct(person_id, pid, cohort = sample, wave_m, age_m, sex)
@@ -161,32 +171,9 @@ p_boy <- persons |>
   distinct(cohort, pid, sex) |>
   summarise(p_boy = mean(sex == "boy"), .by = cohort)
 
-rm(resp, persons, sets, scores, fits, kit)
+rm(resp, resp_m03, resp_m36, persons, sets, scores, fits, kit)
 
-# ---- 2 Extend M03 to 60 and 72 months with the M36 aggregates ----
-
-late <- c(60, 72)
-copy_late <- function(tab) {
-  tab |>
-    filter(cohort == "M36", wave_m %in% late) |>
-    mutate(cohort = "M03") |>
-    bind_rows(tab)
-}
-# On the M36 scale: these waves are simulated with the M36 item parameters (see source_of())
-waves <- copy_late(waves)
-booklets <- copy_late(booklets)
-# M36 children also join at 84 months, so its share seen at 36-72 is low.
-# M03 keeps its 48 month share.
-attend <- attend |>
-  filter(cohort == "M03", wave_m == 48) |>
-  select(-wave_m) |>
-  cross_join(tibble(wave_m = late)) |>
-  bind_rows(attend)
-attend_domain <- copy_late(attend_domain)
-age_spread <- copy_late(age_spread)
-cor_wave$M03 <- bind_rows(cor_wave$M03, filter(cor_wave$M36, w1 >= 48, w2 <= 72))
-
-# ---- 3 Simulate ----
+# ---- 2 Simulate ----
 
 set.seed(SEED)
 
@@ -251,16 +238,13 @@ visits <- function(kids) {
     select(-p_domain)
 }
 
-# Which calibration simulates a wave: its own, except M03 at 60 and 72 months (M36)
-source_of <- function(cohort, wave_m) if_else(cohort == "M03" & wave_m %in% late, "M36", cohort)
-
 # PCM responses to the standard booklet, then drop items at the real rate of not answering
 respond <- function(seen) {
   cells <- seen |> nest(kids = c(pid, sex, age_m, theta), .by = c(cohort, wave_m, domain))
   pmap(cells, \(cohort, wave_m, domain, kids) {
     book <- booklets |>
       filter(.data$cohort == .env$cohort, .data$wave_m == .env$wave_m, .data$domain == .env$domain)
-    b <- betas[betas$cohort == source_of(cohort, wave_m) & betas$domain == domain, ]
+    b <- betas[betas$cohort == cohort & betas$domain == domain, ]
     item_betas <- map(set_names(book$item_id), \(i) b$beta[b$item_id == i])
     X <- kits_sim(kids$theta, item_betas, prefix = "x")
     as_tibble(X) |>
@@ -268,8 +252,7 @@ respond <- function(seen) {
       pivot_longer(all_of(book$item_id), names_to = "item_id", values_to = "item_score") |>
       left_join(select(book, item_id, p_item), by = "item_id") |>
       filter(runif(n()) < p_item) |>
-      transmute(pid, sample = cohort, sex, wave_m, age_m, item_id, item_score, domain, theta,
-                source = source_of(cohort, wave_m))
+      transmute(pid, sample = cohort, sex, wave_m, age_m, item_id, item_score, domain, theta)
   }) |>
     list_rbind()
 }
@@ -278,15 +261,11 @@ respond <- function(seen) {
 # CML then cannot estimate the item (scores must start at 0 without gaps, over all waves of a
 # cohort). Redraw only that item, for the same children, until its scores have no gap.
 fill_scores <- function(rows, sample, domain, item_id) {
-  beta_of <- function(src) {
-    betas$beta[betas$cohort == src & betas$domain == domain & betas$item_id == item_id]
-  }
+  beta <- betas$beta[betas$cohort == sample & betas$domain == domain & betas$item_id == item_id]
   no_gap <- function(x) all(0:max(x) %in% x)
   tries <- 0
   while (!no_gap(rows$item_score) && tries < 1000) {
-    rows <- rows |>
-      mutate(item_score = as.vector(kits_sim(theta, list(i = beta_of(source[1])), prefix = "x")),
-             .by = source)
+    rows$item_score <- as.vector(kits_sim(rows$theta, list(i = beta), prefix = "x"))
     tries <- tries + 1
   }
   if (tries > 0) message(sample, " ", item_id, ": redrawn ", tries, " times")
@@ -336,7 +315,7 @@ kitm36 <- cohort_list("M36")
 save(kitm03, file = file.path(OUT, "kitm03.rda"), compress = "xz")
 save(kitm36, file = file.path(OUT, "kitm36.rda"), compress = "xz")
 
-# ---- 4 Report (aggregates only) ----
+# ---- 3 Report (aggregates only) ----
 
 kit_demo |> distinct(person_id, sample, wave_m) |> count(sample, wave_m) |> print(n = 20)
 sizes <- file.size(file.path(OUT, c("kitm03.rda", "kitm36.rda")))

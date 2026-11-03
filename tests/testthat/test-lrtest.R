@@ -179,9 +179,10 @@ test_that("split = \"wave\"：kitm03 lan，每個波次一組，各組只用觀�
   expect_identical(lr(x)$split, "wave_m")
   # 波次 3 沒有人 lana04 拿到最高分
   expect_true(any(part(x, "unobserved")$group == "3" & part(x, "unobserved")$item_id == "lana04"))
-  # 訊息（沒有估的步驟）和警告（分數有缺，lanc09 在 18 個月）
+  # 訊息（沒有估的步驟）和警告（分數有缺：拿掉 lanc09 在 18 個月的 1 分，剩 0、2 分）
   expect_message(suppressWarnings(kits_dif(resp, "wave", item)), class = "kits_message_data")
-  expect_warning(suppressMessages(kits_dif(resp, "wave", item)), class = "kits_warning_data")
+  gap <- kits_resp(lan[!(lan$wave_m == 18 & lan$item_id == "lanc09" & lan$item_score == 1), ])
+  expect_warning(suppressMessages(kits_dif(gap, "wave")), "lanc09 \\(18\\)", class = "kits_warning_data")
   # 矩陣加上 persons 給一樣的結果
   X <- wide_matrix(resp, "resp")
   persons <- data.frame(visit_id = resp$visit_id, wave_m = resp$wave_m)

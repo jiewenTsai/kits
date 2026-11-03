@@ -1,3 +1,16 @@
+# kits 0.26.0
+
+The demo data change; the code does not.
+
+* `kitm03` at 60 and 72 months now comes from the real M03 children of those ages: their item
+  parameters, booklets, attendance, wave means and SDs, correlations and age spread. Before, the
+  real M03 data stopped at 48 months and these two waves borrowed the M36 aggregates. M03 is now
+  calibrated over 3 to 72 months, so every wave of `kitm03` changes a little. `kitm36` is simulated
+  from the same aggregates as before, but its random draws come after those of `kitm03`, so its
+  rows change too. Children, ids, waves, items and anchors stay the same
+  (`data-raw/kit_demo.R`).
+* Tests and examples that print numbers from the demo data are updated.
+
 # kits 0.25.3
 
 Tests only; every result is identical to 0.25.2.

@@ -47,8 +47,8 @@ KIT items matched to GSED items, with their GSED difficulty \code{tau}. Use it t
 \code{kits_linking(items, anchors)}. \code{kitm03} has 27 anchors, \code{kitm36} 12.
 }
 
-The data were simulated from aggregates of the real KIT data (\code{data-raw/kit_demo.R}); the waves
-at 60 and 72 months of \code{kitm03} go beyond the real M03 follow-up (48 months) and are not observed.
+The data were simulated from aggregates of the real KIT data (\code{data-raw/kit_demo.R}), each wave
+from its own cohort: \code{kitm03} at 3 to 72 months, \code{kitm36} at 36 to 96 months.
 Details: tutorial_algorithms/01_calibration.html.
 }
 \examples{
