@@ -6,8 +6,9 @@ regression tests and the fix of kits 0.26.1. Date: 2026-11-04.
 
 ## Summary
 
-Every number kits writes into a report agrees with an established engine: 32 of 32 comparisons
-pass, from 5.4e-14 against dexter to 0.099 against TAM's MML (expected, see below). 30 of 30
+Every number kits writes into a report agrees with an established engine: 35 of 35 comparisons
+pass, from 5.4e-14 against dexter to 0.099 against TAM's MML (expected, see below); the norms agree
+with cNORM to 4.5e-7. 30 of 30
 metamorphic relations hold. The existing tests caught 18 of 20 planted faults; of the two
 survivors, one is an equivalent mutant and the other is now covered by a regression test. This
 validation was run after release, so no acceptance criteria were written before generation. One
@@ -38,8 +39,9 @@ The criteria that the existing tests imply:
 
 ## Engine equivalence
 
-Script: `inst/validation/engine.R` (needs dexter, psychotools, TAM, mirt). Data: `kits_sim` with
-fixed seeds and `kitm03` lan. Results: `inst/validation/results/engine_results.csv`. Runtime 9 s.
+Script: `inst/validation/engine.R` (needs dexter, psychotools, TAM, mirt; cNORM when installed).
+Data: `kits_sim` with fixed seeds, `kitm03` lan and simulated norm data (`norms_sim.R`). Results:
+`inst/validation/results/engine_results.csv`. Runtime 12 s.
 
 | Function | Reference engine | Quantity | Max abs. difference | Pass |
 |---|---|---|---|---|
@@ -58,11 +60,20 @@ fixed seeds and `kitm03` lan. Results: `inst/validation/results/engine_results.c
 | `kits_dif` | dexter `DIF`; psychotools LR | chi-square; LR; item DIF | 1.1e-10; 5.1e-10; 4.7e-7 | yes |
 | `kits_precision` | mirt and TAM, all 432 patterns | E[WLE], RMSE | 3.1e-12 | yes |
 | `kits_linking`, `kits_drift` | Hand formula (mean/sigma, one 2 SD screen) | intercept, slope | 0 | yes |
+| `kits_norms` | cNORM 3.7.0 `cnorm.shash` (same degrees, best of the same four delta starts) | negative log-likelihood; P3 to P97 at 63 ages | 0; 4.5e-7 | yes |
+| `kits_norm_z` | cNORM `predict()`, (T − 50) / 10 | same-age z of 1,865 children | 1.9e-7 | yes |
 
-No reference engine: the norms (`kits_norms`, `kits_norm_*`; cNORM and gamlss are not
-installed), `kits_link_error` (a kits-specific bootstrap), `kits_dif_combine`, `kits_vertical`.
-`tests/testthat/test-against-kitsPreview.R` compares the norms with cNORM through kitsPreview, but
-it skips where kitsPreview is not installed.
+The norm comparison runs cNORM when it is installed; otherwise it uses the cNORM values stored in
+`reference/norms_cnorm.rds` (made by `reference/make_norms_cnorm.R`), and
+`tests/testthat/test-norms-cnorm-ref.R` checks the same values in every `R CMD check`. The z of 5
+children beyond |z| = 3 is not compared, because cNORM caps norm scores there by default. kits
+interpolates between the rows of the table, so the children are placed at the nearest row (half a
+month) for the z comparison.
+
+No reference engine: `kits_norm_screen` and `kits_norm_ages` (kits rules, compared with kitsPreview
+only), `kits_link_error` (a kits-specific bootstrap), `kits_dif_combine`, `kits_vertical`.
+`tests/testthat/test-against-kitsPreview.R` compares these with kitsPreview, but it skips where
+kitsPreview is not installed (it was not installed for this report).
 
 Parametrisation: kits beta is the PCM step location (Masters, 1982), the same as dexter's beta,
 psychotools' `threshpar(type = "mode")` and TAM's PCM xsi; mirt uses d_k = -cumsum(beta) with a = 1.
@@ -113,6 +124,7 @@ known. The table lists the faults found after release, plus the most consequenti
 |---|---|---|---|---|---|
 | 0.26.1 | `kits_vertical()` stopped ("missing value where TRUE/FALSE needed") when a cohort had one person at a shared wave (K49) | Boundary | History review | yes | `test-api22.R` |
 | 0.26.1 | `kits_drift()` boundary at exactly `min_n` untested (K19) | Boundary | Mutation | not a fault | `test-link-drift-norms.R` |
+| 0.26.1 | The norm comparison with cNORM ran only through kitsPreview, so it was skipped where kitsPreview was missing | Other (test) | Validation | not a fault | `test-norms-cnorm-ref.R` |
 | 0.26.0 | A test relied on a score gap that the demo data happened to have | Boundary (test) | Demo data change | yes | `test-lrtest.R` |
 | 0.25.3 | A test differed in the 16th digit on Windows and macOS | Other (test) | r-universe | yes | yes |
 | 0.16.0 | WLE stopped at a local optimum in about 5% of data sets | Numerical estimation | Cross-engine (kitsPreview) | no | yes |
@@ -123,7 +135,7 @@ known. The table lists the faults found after release, plus the most consequenti
 |---|---|
 | Acceptance criteria written beforehand | 0 |
 | First-generation pass rate | 2 of 3 dated versions (67%); earlier versions cannot be reconstructed |
-| Faults caught per layer | Engine 0, metamorphic 0, mutation 1 missing test, history review 1 open fault; earlier: cross-engine 1, review and not stated for the rest |
+| Faults caught per layer | Engine 0 (cNORM included), metamorphic 0, mutation 1 missing test, history review 1 open fault; earlier: cross-engine 1, review and not stated for the rest |
 | Faults found after release | 3 (strict: after 2026-11-01), 4 (broad); all fixed in 0.26.1 |
 
 ## Reproduce
@@ -131,5 +143,7 @@ known. The table lists the faults found after release, plus the most consequenti
 ```r
 Sys.setenv(KIT_VALIDATION_OUT = "validation_results")
 source(system.file("validation", "engine.R", package = "kits"))
+# the stored cNORM values, after a change to the norm data or to cNORM (run in inst/validation):
+#   Rscript reference/make_norms_cnorm.R
 source(system.file("validation", "metamorphic.R", package = "kitverse"))
 ```

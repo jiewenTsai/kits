@@ -7,6 +7,11 @@
   one person at a wave shared with another cohort: the check notes that z cannot be computed.
 * A test for `kits_drift()`: a step with exactly `min_n` persons below and above is judged (found by
   mutation testing).
+* The norms are compared with cNORM 3.7.0 (`cnorm.shash()`) on simulated data: the negative
+  log-likelihood, the percentiles at every age of the table and the same-age z agree to 1e-4 (the
+  largest difference 4.5e-7). `engine.R` runs cNORM when it is installed and otherwise uses the
+  values stored in `inst/validation/reference/norms_cnorm.rds`; a test does the same, so the check
+  no longer depends on kitsPreview.
 
 # kits 0.26.0
 

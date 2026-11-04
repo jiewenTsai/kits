@@ -1,7 +1,8 @@
 # Engine-equivalence layer of the kits validation report.
 #
 # Rule: each in-scope numeric function of kits is compared ONCE, on FIXED data, against an established
-# engine (dexter, psychotools, TAM, mirt; eRm, iarm, cNORM, kitsPreview are not installed).
+# engine (dexter, psychotools, TAM, mirt; cNORM when installed, else its stored values; eRm, iarm,
+# kitsPreview are not installed).
 # Data: only kits::kits_sim() with fixed seeds and the demo data kits::kitm03. No real data.
 #
 # Run:  source(system.file("validation", "engine.R", package = "kits"))
@@ -355,9 +356,32 @@ add("kits_precision", paste(ver("mirt"), "+", ver("TAM")), "full enumeration of 
     "replaces kits' Lord-Wingersky recursion by explicit enumeration; WLEs from TAM")
 
 # ---- 10. norms and descriptive functions: no installed engine ----------------------------------------
-add_none("kits_norms / kits_norm_fit / kits_norm_z / kits_norm_table / algo_shash",
-         "reference engine not installed (cNORM, gamlss)",
-         "shash continuous norming; kits' own test-against-kitsPreview.R compares with cNORM via kitsPreview but is SKIPPED here (kitsPreview, cNORM not installed)")
+# ---- 10a. kits_norms vs cNORM::cnorm.shash (live when cNORM is installed, else stored values) ------
+source(system.file("validation", "norms_sim.R", package = "kits"))
+ns <- norm_sim()
+nr <- suppressWarnings(kits_norms(ns$D, ns$age, ages = ns$ages, degrees = ns$degrees, pad = 0,
+                                  delta_starts = ns$delta_starts))
+if (requireNamespace("cNORM", quietly = TRUE)) {
+  nc <- cnorm_ref(ns)
+  nc_note <- "live cNORM run (best of the four delta starts, as kits)"
+} else {
+  nc <- readRDS(file.path(fx, "norms_cnorm.rds"))
+  nc_note <- paste("not a live engine run: values stored in the kits repo with", nc$engine,
+                   "(reference/make_norms_cnorm.R)")
+  nc$engine <- paste(nc$engine, "(stored values; NOT installed)")
+}
+D_norm <- "simulated seed 5: 1870 children aged 4-35 months, D = 20 + 15 log(age) + N(0, 3)"
+add("kits_norms", nc$engine, "cnorm.shash(degrees 5, 4, 3, 2) $result$value", D_norm,
+    "negative log-likelihood", nr$neg_loglik[1], nc$neg_loglik, 1e-4, nc_note)
+add("kits_norms", nc$engine, "predict() inverted at 50 + 10 qnorm(p)", D_norm,
+    "P3, P10, P50, P90, P97 at 63 ages", as.matrix(as.data.frame(nr)[colnames(nc$pct)]), nc$pct, 1e-4,
+    "same shash, same age transform (sqrt)")
+zk <- kits_norm_z(ns$D, ns$age_row, nr)
+inside <- abs(nc$z) < 3
+add("kits_norm_z", nc$engine, "(predict() - 50) / 10", D_norm, "same-age z, |z| < 3",
+    zk[inside], nc$z[inside], 1e-4,
+    sprintf("children at table ages (no interpolation); cNORM caps norm scores at z = +-3 by default, so %d children beyond it are not compared",
+            sum(!inside)))
 add_none("kits_norm_screen / kits_norm_ages", "reference engine not installed (kitsPreview)",
          "wave screening rules are kits/kitsPreview-specific; no external engine")
 add_none("kits_link_error / algo_link_error", "no reference engine",
