@@ -141,3 +141,13 @@ test_that("0.22.0 停用的函數拿掉了；平常的用法沒有 kits_warning_
   expect_no_error(no_old(summary(co, theta = 0)))
   expect_no_error(no_old(plot(v_lan, type = "median")))
 })
+
+test_that("kits_vertical()：一個世代在共同波次只有 1 人時不停下來，檢查註記 z 算不出來（K49）", {
+  one <- dplyr::filter(s_lan, !(cohort == "M36" & wave_m == 36))
+  one <- dplyr::bind_rows(one, dplyr::filter(s_lan, cohort == "M36", wave_m == 36)[1, ])
+  v <- expect_no_error(kits_vertical(one))
+  ck <- kits_check(v)
+  row <- ck[ck$check == "cohorts at wave 36", ]
+  expect_equal(row$status, "note")
+  expect_match(row$message, "z cannot be computed", fixed = TRUE)
+})

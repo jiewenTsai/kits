@@ -131,6 +131,13 @@ Weber, A. M., Rubio-Codina, M., Walker, S. P., van Buuren, S., Eekhout, I., et a
 The D-score: a metric for interpreting the early development of infants and toddlers across global settings.
 \emph{BMJ Global Health, 4}(6), e001724. \doi{10.1136/bmjgh-2019-001724}
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/jiewenTsai/kits}
+}
+
+}
 \author{
 \strong{Maintainer}: Jie-Wen Tsai \email{tsai.jiewen@gmail.com}
 

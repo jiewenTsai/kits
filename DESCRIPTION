@@ -1,6 +1,6 @@
 Package: kits
 Title: Psychometric Tools for the Kids in Taiwan Developmental Scale
-Version: 0.26.0
+Version: 0.26.1
 Date: 2026-11-04
 Authors@R: person("Jie-Wen", "Tsai", email = "tsai.jiewen@gmail.com", role = c("aut", "cre"))
 Description: Tools for the developmental scale of KIT (Kids in Taiwan: National
@@ -38,6 +38,7 @@ Description: Tools for the developmental scale of KIT (Kids in Taiwan: National
     'kitsPreview' computes the same results with 'dexter' and 'cNORM' for
     validation.
 License: GPL-3
+URL: https://github.com/jiewenTsai/kits
 Encoding: UTF-8
 LazyData: true
 LazyDataCompression: xz

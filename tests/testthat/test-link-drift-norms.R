@@ -299,3 +299,17 @@ test_that("age_pass() 的 p50、kits_item_positions、kits_ladder_marks", {
   norm2 <- data.frame(score = rep(c("lan", "cog"), each = 2), age_m = c(12, 24, 12, 24), P50 = c(50, 60, 54, 66))
   expect_equal(old_ladder_marks(norm2, scores = c("lan", "cog"), ages = c(12, 24))$D, c(52, 63))
 })
+
+test_that("kits_drift：上下人數剛好等於 min_n 的步驟仍然判斷（突變 K19）", {
+  betas <- list(a1 = c(-1, 0), a2 = c(0, 1), a3 = 0.5, a4 = -0.5, a5 = c(-0.5, 0.5), a6 = 1.5, a7 = -3.5)
+  ref <- kits_item(kits_sim(seq(-3, 3, length.out = 400), betas, seed = 1))
+  new <- kits_sim(seq(-2, 4, length.out = 400), betas, prefix = "n", seed = 2)
+  pts <- as.data.frame(kits_drift(new, ref, min_n = 1)$points)
+  reach <- pmin(pts$n_below, pts$n_above)
+  edge <- sort(unique(reach))[2]   # 不是最小的那一步：拿掉最小的以後還有至少 3 步
+  at <- as.data.frame(kits_drift(new, ref, min_n = edge)$points)
+  hit <- pmin(at$n_below, at$n_above) == edge
+  expect_true(any(hit))
+  expect_true(all(at$judged[hit]))
+  expect_false(any(at$judged[pmin(at$n_below, at$n_above) < edge]))
+})

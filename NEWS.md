@@ -1,3 +1,13 @@
+# kits 0.26.1
+
+* Validation report: `inst/validation/validation.md` (to the KIT validation standard of kitDesign),
+  with `engine.R`, which compares kits with dexter, psychotools, TAM and mirt (32 of 32 pass), and
+  its results. Open it with `kitverse::kitverse_validation("kits")`.
+* `kits_vertical()` no longer stops ("missing value where TRUE/FALSE needed") when a cohort has
+  one person at a wave shared with another cohort: the check notes that z cannot be computed.
+* A test for `kits_drift()`: a step with exactly `min_n` persons below and above is judged (found by
+  mutation testing).
+
 # kits 0.26.0
 
 The demo data change; the code does not.

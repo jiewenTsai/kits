@@ -282,6 +282,12 @@ cohort_rows <- function(cohorts) {
 cohort_pair_rows <- function(pair) {
   wave <- format(pair$wave_m)
   z <- pair$z
+  # 一個世代在這一波只有 1 人時沒有 SD，z 是 NA：註記，不停下來
+  if (!is.finite(z)) {
+    return(list(diag_row(sprintf("cohorts at wave %s", wave), z, "note",
+      sprintf("%s minus %s: mean %.2f; z cannot be computed (a cohort has fewer than 2 persons here)",
+              pair$cohort_2, pair$cohort_1, pair$mean_diff))))
+  }
   z_status <- if (abs(z) > 2) "note" else "ok"
   z_detail <- if (abs(z) > 2) " (beyond 2 SE: check the cohort link)" else ""
   z_message <- sprintf("%s minus %s: mean %.2f, SD %.2f; z = %.2f%s", pair$cohort_2, pair$cohort_1,
